@@ -1,0 +1,24 @@
+# ---- 运行时缓存：程序自动生成/自动更新，无需入库 ----
+holidays.txt
+school.txt
+images/poster_urls.txt
+
+# ---- 用户数据：私人内容，绝不入库 ----
+myfest.txt
+huangli_cfg.json
+
+# ---- 本地图片：可能是私人照片，绝不入库 ----
+images/*.jpg
+images/*.jpeg
+images/*.png
+images/*.gif
+images/*.bmp
+images/*.webp
+
+# ---- 临时文件与系统文件 ----
+*.tmp
+*.log
+*.bak
+Thumbs.db
+desktop.ini
+.DS_Store

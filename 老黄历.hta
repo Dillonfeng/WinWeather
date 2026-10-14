@@ -1,0 +1,2779 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=9">
+<title>老黄历</title>
+<HTA:APPLICATION
+  ID="oHuangLi"
+  APPLICATIONNAME="HuangLi"
+  BORDER="none"
+  CAPTION="no"
+  SYSMENU="no"
+  MAXIMIZEBUTTON="no"
+  MINIMIZEBUTTON="no"
+  SHOWINTASKBAR="no"
+  SINGLEINSTANCE="yes"
+  SCROLL="no"
+  CONTEXTMENU="no"
+  INNERBORDER="no"
+  SELECTION="no"
+/>
+<style>
+html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
+  font-family:"KaiTi","STKaiti","楷体","DFKai-SB",serif;width:100%;height:100%;}
+#app{position:absolute;top:0;left:0;right:0;bottom:0;background:#b3251a;color:#2b2b2b;overflow:hidden;}
+#page{position:absolute;top:2px;left:2px;right:2px;bottom:2px;background:#f7f0dc;overflow:hidden;
+  border:1px solid #d9b877;}
+/* ---------- 顶部浮动栏（鼠标靠近顶部显示） ---------- */
+#floatTop{position:absolute;top:0;left:0;right:0;height:28px;z-index:15;display:none;
+  background:#b3251a;color:#fbe9c6;font-size:15px;font-weight:bold;
+  letter-spacing:8px;text-align:center;line-height:28px;cursor:move;}
+#floatTop .tbbtn{position:absolute;top:0;width:32px;height:28px;line-height:28px;text-align:center;
+  border:none;background:transparent;color:#fbe9c6;font-size:16px;cursor:pointer;letter-spacing:0;
+  font-family:"Segoe UI Symbol",sans-serif;padding:0;}
+#floatTop .tbbtn:hover{background:#8f1d12;color:#fff;}
+#btnSettings{left:0;}
+#btnClose{right:0;}
+/* ============ 每日黄历 ============ */
+#dayView{display:table;width:100%;height:100%;table-layout:fixed;}
+.dvRow{display:table-row;}
+/* Row1 只留够「年月日+农历+干支」的高度：内容顶对齐 + 固定上内边距，
+   使丙午马年停在原位置；行末不留空白，紧接宜忌。
+   多出来的高度全部给 Row3，由放大的月相图标与 5 天预报消化。 */
+#dayView .dvRow:nth-child(1){height:38%;}
+#dayView .dvRow:nth-child(2){height:19%;}
+#dayView .dvRow:nth-child(3){height:43%;}
+.dvCell{display:table-cell;padding:0 14px;}
+/* 顶对齐 + 固定上内边距：让干支行停在原来的绝对位置，行末不留缝 */
+/* padding-top 30 让「年月星期」避开自动隐藏的 28px 顶栏（页面 y=30 起，顶栏到 y=28） */
+.dvHeroCell{vertical-align:top;text-align:center;padding-top:28px;}
+.dvYijiCell{vertical-align:middle;padding:4px 12px;}
+.dvInfoCell{vertical-align:top;padding:2px 12px 6px;}
+.solarRow{text-align:center;}
+.ym{font-size:19px;color:#7a6242;letter-spacing:3px;}
+/* margin-top 由 28 降到 9，把上面让出的 19px 补回来，
+   使大数字及其下方（农历/干支）位置保持不变 */
+.bigday{font-size:140px;font-weight:bold;line-height:1.0;margin-top:17px;
+  font-family:"Bahnschrift","Consolas","Courier New",monospace;}
+.bigday.dayNormal{color:#2e7d32;}
+.bigday.dayWeekend{color:#1565c0;}
+.bigday.dayFest{color:#c22012;}
+.lunarLine{text-align:center;font-size:26px;color:#a8231a;margin-top:0;letter-spacing:1px;}
+.gzLine{text-align:center;font-size:16px;color:#5a4a3a;margin-top:0;}
+.banner{text-align:center;font-size:19px;font-weight:bold;color:#b3251a;margin-top:6px;min-height:26px;letter-spacing:1px;}
+.banner.has{cursor:pointer;}
+.banner .more{font-size:13px;font-weight:normal;color:#8a6a2a;text-decoration:underline;margin-left:6px;}
+/* ============ 节日 / 节气 大图海报 ============ */
+#poster{position:absolute;top:0;left:0;right:0;bottom:0;z-index:12;display:none;cursor:pointer;
+  background:#8e1b12;overflow:hidden;}
+#posterSvg{position:absolute;top:0;left:0;width:100%;height:100%;}
+#posterImg{position:absolute;top:0;left:0;width:100%;height:100%;display:none;}
+#posterShade{position:absolute;left:0;right:0;bottom:0;height:132px;background:rgba(0,0,0,0.48);}
+#posterName{position:absolute;left:0;right:0;bottom:58px;text-align:center;color:#fff6dd;
+  font-size:46px;font-weight:bold;letter-spacing:10px;}
+#posterDate{position:absolute;left:0;right:0;bottom:26px;text-align:center;color:#ffe9b8;
+  font-size:16px;letter-spacing:2px;}
+#posterHint{position:absolute;left:0;right:0;top:0;height:24px;line-height:24px;text-align:center;
+  color:#fff6dd;font-size:12px;background:rgba(0,0,0,0.4);letter-spacing:4px;}
+.yiji{border:1px solid #c9a063;background:#fdf8ec;width:100%;}
+.yiji table{width:100%;border-collapse:collapse;table-layout:fixed;}
+.yiji td{width:50%;vertical-align:top;padding:9px 12px;}
+.yiji td.sep{border-left:1px dashed #d8b877;}
+.stamp{display:inline-block;width:30px;height:30px;line-height:30px;text-align:center;
+  font-size:18px;font-weight:bold;color:#fff;border-radius:4px;}
+.yiStamp{background:#a8231a;}
+.jiStamp{background:#3a3a3a;}
+.yjList{font-size:15.5px;line-height:23px;color:#2b2b2b;margin-top:4px;}
+.infoLine{text-align:center;font-size:15px;color:#5a4a3a;line-height:23px;}
+.infoLine b{color:#a8231a;}
+.aqi{display:inline-block;padding:0 7px;border-radius:9px;font-size:12.5px;line-height:19px;
+  vertical-align:1px;font-weight:bold;}
+.aqism{font-size:11px;margin-left:3px;font-weight:bold;}
+.wico{font-size:30px;line-height:1;vertical-align:middle;margin-right:3px;}
+.wsvg{width:30px;height:30px;vertical-align:middle;margin-right:3px;}
+.wsvg.moon{width:44px;height:44px;margin-right:8px;vertical-align:-9px;}
+.wsvg.sm{width:23px;height:23px;margin-right:2px;vertical-align:-3px;}
+#moonLine{font-size:17px;margin:0;line-height:44px;}
+#sunLine{margin-top:2px;}
+/* 未来五天天气 */
+.fc5{margin-top:5px;padding-top:4px;border-top:1px dashed #d8b877;}
+.fc5 .cell{display:inline-block;width:20%;text-align:center;vertical-align:top;}
+.fc5 .d{font-size:12.5px;color:#7a6a55;line-height:17px;}
+.fc5 .ic{height:34px;line-height:34px;}
+.fc5 .wsvg{width:30px;height:30px;margin:0;}
+.fc5 .t{font-size:12.5px;color:#a8231a;font-weight:bold;line-height:17px;}
+.aqism{font-size:11.5px;margin-left:3px;font-weight:bold;}
+.tyw{color:#c0392b;font-weight:bold;}
+.fc5 .t b{font-weight:normal;color:#c9a063;}
+/* ============ 万年历 ============ */
+#monthView{position:absolute;top:0;left:0;right:0;bottom:0;display:none;}
+.mHeader{position:absolute;top:0;left:0;right:0;height:46px;text-align:center;line-height:46px;
+  border-bottom:1px solid #e6d5ad;background:#f2e7cc;}
+.mHeader button{border:none;background:#b3251a;color:#fbe9c6;font-size:15px;width:32px;height:30px;
+  cursor:pointer;margin:0 3px;vertical-align:middle;font-family:inherit;}
+.mHeader button:hover{background:#8f1d12;}
+#mTitle{font-size:23px;font-weight:bold;color:#8c2f23;vertical-align:middle;display:inline-block;
+  min-width:160px;letter-spacing:2px;}
+#calWrap{position:absolute;top:52px;left:8px;right:8px;bottom:8px;}
+#calTable{width:100%;height:100%;border-collapse:collapse;table-layout:fixed;}
+#calTable th{font-size:15px;color:#8c2f23;border:1px solid #e0d2b0;background:#efe4c8;padding:4px 0;font-weight:bold;}
+#calTable td{border:1px solid #e6dabd;vertical-align:middle;padding:2px;cursor:pointer;background:#fbf6e9;text-align:center;}
+#calTable td:hover{background:#f3e5c3;}
+#calTable td.empty{background:transparent;border-color:#efe6cf;cursor:default;}
+#calTable td.today{background:#b3251a;}
+#calTable td.today .sd,#calTable td.today .ld{color:#fff !important;}
+.sd{font-size:22px;font-weight:bold;color:#2b2b2b;font-family:"Bahnschrift","Consolas",monospace;text-align:center;}
+.sd.sdFest{color:#c22012;}
+.sd.sdWeekend{color:#2b6cb0;}
+.sd.sdWork{color:#8a6a2a;}
+.sd.sdRest{color:#c22012;}
+#calTable td.workday{background:#f7f0e2;}
+#calTable td.restday{background:#fdf1ee;}
+#calTable td.today.workday,#calTable td.today.restday{background:#b3251a;}
+.ld .ban{display:inline-block;background:#8a6a2a;color:#fff;border-radius:2px;
+  font-size:10px;line-height:13px;padding:0 3px;}
+.ld .off{display:inline-block;background:#c22012;color:#fff;border-radius:2px;
+  font-size:10px;line-height:13px;padding:0 3px;}
+#mTitle .sync{font-size:11px;font-weight:normal;color:#8a7a60;margin-left:8px;letter-spacing:0;}
+.ld{font-size:13px;color:#7a6a55;text-align:center;white-space:nowrap;overflow:hidden;}
+.ld .ico{font-size:14px;vertical-align:middle;margin-right:1px;}
+.ld.fest,.ld.term{color:#c22012;font-weight:bold;}
+.ld.lunar1{color:#8c2f23;}
+/* ---------- 底部导航（自动隐藏） ---------- */
+#nav{position:absolute;bottom:0;left:0;right:0;height:48px;z-index:15;display:none;
+  background:#b3251a;border-top:2px solid #8f1d12;text-align:center;}
+#nav button{border:none;background:#f2e7cc;color:#a8231a;font-size:15px;font-weight:bold;
+  padding:0 13px;height:32px;margin:8px 4px 0 4px;cursor:pointer;font-family:inherit;
+  border-radius:3px;}
+#nav button:hover{background:#fff8e7;}
+/* ---------- 自定义节日提示 ---------- */
+#toast{position:absolute;top:96px;left:22px;right:22px;z-index:30;display:none;cursor:pointer;
+  background:#fff8e7;border:2px solid #b3251a;box-shadow:0 8px 24px rgba(60,20,10,0.42);
+  padding:13px 16px;color:#3a2f28;}
+#toast .tclose{position:absolute;top:1px;right:7px;color:#b3251a;font-size:17px;line-height:20px;}
+#toast .ttitle{font-size:17px;font-weight:bold;color:#b3251a;margin-bottom:6px;letter-spacing:1px;}
+#toast .tbody{font-size:13.5px;line-height:20px;color:#5a4a3a;white-space:pre-wrap;}
+#toast .thint{font-size:11px;color:#9a8a70;margin-top:7px;}
+#mqOverlay{position:absolute;top:0;left:0;width:100%;height:100%;z-index:40;display:none;cursor:pointer;overflow:hidden;
+  background:rgba(60,20,10,0.55);}
+#mqText{position:absolute;top:44%;left:0;white-space:nowrap;
+  font-size:52px;font-weight:bold;color:#ffe9a8;letter-spacing:4px;
+  text-shadow:0 3px 10px rgba(0,0,0,0.75),0 0 26px rgba(255,180,60,0.55);
+  font-family:"Microsoft YaHei","SimHei",sans-serif;}
+/* ---------- 设置 ---------- */
+#settings{position:absolute;top:40px;left:24px;right:24px;max-height:580px;overflow:auto;
+  background:#fff8e7;border:2px solid #b3251a;
+  box-shadow:0 6px 18px rgba(60,20,10,0.35);
+  padding:14px;z-index:20;display:none;font-size:14px;color:#3a2f28;}
+#settings .sect{font-size:13.5px;font-weight:bold;color:#b3251a;border-top:1px solid #e0d0a8;
+  padding-top:9px;margin:12px 0 7px;letter-spacing:1px;}
+.mfItem{border:1px solid #e0d0a8;background:#fffdf6;padding:5px 8px;margin-bottom:5px;font-size:13px;position:relative;}
+.mfItem b{color:#a8231a;}
+.mfItem .d{color:#7a6a55;font-size:11.5px;}
+.mfItem .x{position:absolute;top:3px;right:7px;color:#b3251a;font-weight:bold;cursor:pointer;font-size:14px;}
+.mfItem .e{position:absolute;top:3px;right:24px;color:#2e7d32;font-weight:bold;cursor:pointer;font-size:14px;}
+.mfItem.editing{background:#fff3d6;border-color:#d4a017;}
+.mfItem .t{color:#5a4a3a;font-size:12px;margin-top:2px;white-space:pre-wrap;}
+.mfAdd input,.mfAdd select{width:100%;font-family:inherit;font-size:13px;padding:3px 5px;
+  border:1px solid #c9a063;background:#fff;margin-bottom:5px;}
+.mfAdd .two{display:inline-block;width:48.5%;vertical-align:top;}
+.mfAdd .two2{display:inline-block;width:48.5%;vertical-align:top;margin-left:2%;}
+.mfEmpty{font-size:12px;color:#9a8a70;padding:4px 0;}
+.mfMsg{min-height:17px;font-size:12px;margin-top:3px;}
+.mfMsg .err{color:#b3251a;}
+.mfMsg .ok{color:#1b5e20;}
+#settings .row{margin-bottom:12px;}
+#settings label{display:inline-block;width:56px;}
+#settings select{width:180px;font-family:inherit;font-size:15px;padding:3px 4px;border:1px solid #c9a063;background:#fff;}
+#settings button{border:none;background:#b3251a;color:#fbe9c6;font-size:15px;padding:6px 18px;margin-right:8px;cursor:pointer;font-family:inherit;border-radius:3px;}
+#settings .hint{font-size:13px;color:#8a7a60;margin-bottom:12px;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="floatTop">
+    <button id="btnSettings" class="tbbtn" title="设置">⚙</button>
+    老黄历
+    <button id="btnClose" class="tbbtn" title="关闭">✕</button>
+  </div>
+
+  <div id="page">
+    <!-- 每日一页 -->
+    <div id="dayView">
+      <div class="dvRow">
+        <div class="dvCell dvHeroCell">
+          <div class="solarRow">
+            <div class="ym" id="sYearMonth"></div>
+            <div class="bigday" id="sDay"></div>
+          </div>
+          <div class="lunarLine" id="lunarLine"></div>
+          <div class="gzLine" id="gzLine"></div>
+          <div class="banner" id="festLine"></div>
+        </div>
+      </div>
+      <div class="dvRow">
+        <div class="dvCell dvYijiCell">
+          <div class="yiji">
+            <table>
+              <tr>
+                <td><div class="stamp yiStamp">宜</div><div class="yjList" id="yiList"></div></td>
+                <td class="sep"><div class="stamp jiStamp">忌</div><div class="yjList" id="jiList"></div></td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="dvRow">
+        <div class="dvCell dvInfoCell">
+          <div class="infoLine" id="chongLine"></div>
+          <div class="infoLine" id="moonLine"></div>
+          <div class="infoLine" id="weatherLine"></div>
+          <div class="infoLine" id="airLine"></div>
+          <div class="fc5" id="fc5"></div>
+          <div class="infoLine" id="sunLine"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 节日 / 节气 大图海报（点击翻回当前布局） -->
+    <div id="poster">
+      <svg id="posterSvg" xmlns="http://www.w3.org/2000/svg" width="100%" height="100%"
+           preserveAspectRatio="xMidYMid slice" viewBox="0 0 424 654">
+        <defs>
+          <linearGradient id="pgGrad" x1="0" y1="0" x2="0.5" y2="1">
+            <stop id="pgStop1" offset="0" stop-color="#8e1b12"/>
+            <stop id="pgStop2" offset="1" stop-color="#e0b155"/>
+          </linearGradient>
+        </defs>
+        <rect x="0" y="0" width="424" height="654" fill="url(#pgGrad)"/>
+      </svg>
+      <img id="posterImg" alt="">
+      <div id="posterShade"></div>
+      <div id="posterName"></div>
+      <div id="posterDate"></div>
+      <div id="posterHint">点击查看今日详情</div>
+    </div>
+
+    <!-- 万年历 -->
+    <div id="monthView">
+      <div class="mHeader">
+        <button id="prevYear" title="上一年">≪</button>
+        <button id="prevMonth" title="上一月">◀</button>
+        <span id="mTitle"></span>
+        <button id="nextMonth" title="下一月">▶</button>
+        <button id="nextYear" title="下一年">≫</button>
+      </div>
+      <div id="calWrap">
+        <table id="calTable">
+          <thead>
+            <tr id="calHead"><th>一</th><th>二</th><th>三</th><th>四</th><th>五</th><th style="color:#c22012;">六</th><th style="color:#c22012;">日</th></tr>
+          </thead>
+          <tbody id="calBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="nav">
+    <button id="prevBtn">◀ <span id="prevLbl">前一天</span></button>
+    <button id="todayBtn">回到今天</button>
+    <button id="nextBtn"><span id="nextLbl">后一天</span> ▶</button>
+    <button id="toggleBtn">万年历</button>
+  </div>
+
+  <!-- 自定义节日弹窗 -->
+  <div id="toast">
+    <div class="tclose">✕</div>
+    <div class="ttitle" id="toastTitle"></div>
+    <div class="tbody" id="toastBody"></div>
+    <div class="thint">点击任意处关闭</div>
+  </div>
+
+  <!-- 自定义节日滚动大字 -->
+  <div id="mqOverlay">
+    <div id="mqText"></div>
+  </div>
+
+  <!-- 设置面板 -->
+  <div id="settings">
+    <div class="hint">选择城市（天气数据来源：中国气象局，国内可直连）</div>
+    <div class="row"><label>城市</label><select id="cfgCity"></select></div>
+    <div class="row"><label>每周</label><select id="cfgWeek">
+      <option value="1">周一开头</option>
+      <option value="0">周日开头</option>
+    </select></div>
+    <div class="row"><label>开机</label><select id="cfgAuto">
+      <option value="0">不自动启动</option>
+      <option value="1">登录后自动启动</option>
+    </select></div>
+    <div class="row" id="schRow"><label>学校</label><select id="cfgSchool">
+      <option value="0">不显示学校假期</option>
+      <option value="1">显示学校假期（寒暑假/春秋假）</option>
+    </select></div>
+    <div class="hint" id="schTip"></div>
+    <div id="schList"></div>
+    <div class="mfAdd">
+      <input id="schName" placeholder="名称，如：寒假">
+      <span class="two"><input id="schFrom" placeholder="开始 2027-01-23"></span><span class="two2"><input id="schTo" placeholder="结束 2027-02-21"></span>
+      <button id="schAdd">添加校历</button>
+      <button id="schCancel" style="display:none;">取消</button>
+      <div id="schMsg" class="mfMsg"></div>
+    </div>
+    <div class="row">
+      <button id="cfgSave">保存</button>
+      <button id="cfgCancel">取消</button>
+      <button id="holSync">同步调休</button>
+      <button id="schSync">同步校历</button>
+    </div>
+    <div class="hint" id="holTip">放假调休安排来自国务院办公厅通知，可联网自动同步。</div>
+
+    <div class="sect">自定义节日（结婚纪念日、生日等）</div>
+    <div id="mfList"></div>
+    <div class="mfAdd">
+      <input id="mfName" placeholder="名称，如：结婚纪念日">
+      <span class="two"><select id="mfType">
+        <option value="Y">每年（公历）</option>
+        <option value="L">每年（农历）</option>
+        <option value="O">仅一次</option>
+      </select></span><span class="two2"><input id="mfDate" placeholder="03-14 / 农历8-15 / 2027-03-14"></span>
+      <input id="mfText" placeholder="弹窗文字，如：结婚十周年！">
+      <input id="mfPic" placeholder="配图（可选）：图片网址 / 搜索词 / images 下的图片名">
+      <button id="mfAdd">添加</button>
+      <button id="mfCancel" style="display:none;">取消</button>
+      <div id="mfMsg" class="mfMsg"></div>
+    </div>
+  </div>
+</div>
+
+<script language="javascript">
+//__HL_START__
+/* ============================================================
+   农历 / 节气 / 干支 引擎（1900-01-31 ~ 2100-12-31）
+   ============================================================ */
+var lunarInfo = [
+0x04bd8,0x04ae0,0x0a570,0x054d5,0x0d260,0x0d950,0x16554,0x056a0,0x09ad0,0x055d2,
+0x04ae0,0x0a5b6,0x0a4d0,0x0d250,0x1d255,0x0b540,0x0d6a0,0x0ada2,0x095b0,0x14977,
+0x04970,0x0a4b0,0x0b4b5,0x06a50,0x06d40,0x1ab54,0x02b60,0x09570,0x052f2,0x04970,
+0x06566,0x0d4a0,0x0ea50,0x06e95,0x05ad0,0x02b60,0x186e3,0x092e0,0x1c8d7,0x0c950,
+0x0d4a0,0x1d8a6,0x0b550,0x056a0,0x1a5b4,0x025d0,0x092d0,0x0d2b2,0x0a950,0x0b557,
+0x06ca0,0x0b550,0x15355,0x04da0,0x0a5b0,0x14573,0x052b0,0x0a9a8,0x0e950,0x06aa0,
+0x0aea6,0x0ab50,0x04b60,0x0aae4,0x0a570,0x05260,0x0f263,0x0d950,0x05b57,0x056a0,
+0x096d0,0x04dd5,0x04ad0,0x0a4d0,0x0d4d4,0x0d250,0x0d558,0x0b540,0x0b6a0,0x195a6,
+0x095b0,0x049b0,0x0a974,0x0a4b0,0x0b27a,0x06a50,0x06d40,0x0af46,0x0ab60,0x09570,
+0x04af5,0x04970,0x064b0,0x074a3,0x0ea50,0x06b58,0x055c0,0x0ab60,0x096d5,0x092e0,
+0x0c960,0x0d954,0x0d4a0,0x0da50,0x07552,0x056a0,0x0abb7,0x025d0,0x092d0,0x0cab5,
+0x0a950,0x0b4a0,0x0baa4,0x0ad50,0x055d9,0x04ba0,0x0a5b0,0x15176,0x052b0,0x0a930,
+0x07954,0x06aa0,0x0ad50,0x05b52,0x04b60,0x0a6e6,0x0a4e0,0x0d260,0x0ea65,0x0d530,
+0x05aa0,0x076a3,0x096d0,0x04afb,0x04ad0,0x0a4d0,0x1d0b6,0x0d250,0x0d520,0x0dd45,
+0x0b5a0,0x056d0,0x055b2,0x049b0,0x0a577,0x0a4b0,0x0aa50,0x1b255,0x06d20,0x0ada0,
+0x14b63,0x09370,0x049f8,0x04970,0x064b0,0x168a6,0x0ea50,0x06b20,0x1a6c4,0x0aae0,
+0x0a2e0,0x0d2e3,0x0c960,0x0d557,0x0d4a0,0x0da50,0x05d55,0x056a0,0x0a6d0,0x055d4,
+0x052d0,0x0a9b8,0x0a950,0x0b4a0,0x0b6a6,0x0ad50,0x055a0,0x0aba4,0x0a5b0,0x052b0,
+0x0b273,0x06930,0x07337,0x06aa0,0x0ad50,0x14b55,0x04b60,0x0a570,0x054e4,0x0d160,
+0x0e968,0x0d520,0x0daa0,0x16aa6,0x056d0,0x04ae0,0x0a9d4,0x0a2d0,0x0d150,0x0f252,
+0x0d520];
+
+var solarMonth = [31,28,31,30,31,30,31,31,30,31,30,31];
+var Gan  = ["甲","乙","丙","丁","戊","己","庚","辛","壬","癸"];
+var Zhi  = ["子","丑","寅","卯","辰","巳","午","未","申","酉","戌","亥"];
+var Animals = ["鼠","牛","虎","兔","龙","蛇","马","羊","猴","鸡","狗","猪"];
+var termNames = ["小寒","大寒","立春","雨水","惊蛰","春分","清明","谷雨","立夏","小满","芒种","夏至","小暑","大暑","立秋","处暑","白露","秋分","寒露","霜降","立冬","小雪","大雪","冬至"];
+var numCn = ["","一","二","三","四","五","六","七","八","九"];
+
+var lFests = {"1-1":"春节","1-15":"元宵节","2-2":"龙抬头","5-5":"端午节","7-7":"七夕节","7-15":"中元节","8-15":"中秋节","9-9":"重阳节","12-8":"腊八节","12-23":"小年(北)","12-24":"小年(南)"};
+/* 固定日期节日（公历）：含东方传统纪念日与西方节日 */
+var sFests = {
+  "1-1":"元旦","2-14":"情人节","3-5":"雷锋纪念日","3-8":"妇女节","3-12":"植树节",
+  "3-15":"消费者权益日","3-22":"世界水日","4-1":"愚人节","4-22":"世界地球日",
+  "4-23":"世界读书日","5-1":"劳动节","5-4":"青年节","5-12":"护士节",
+  "6-1":"儿童节","6-5":"世界环境日","6-6":"爱眼日","7-1":"建党节","8-1":"建军节",
+  "9-3":"抗战胜利日","9-10":"教师节","9-18":"九一八纪念日","10-1":"国庆节",
+  "10-31":"万圣夜","11-1":"万圣节","11-11":"光棍节","12-13":"国家公祭日",
+  "12-24":"平安夜","12-25":"圣诞节"
+};
+/* 大节日：当天展示整页配图；其余小节日仅在日历中标注 */
+var majorFests = {
+  "元旦":1,"春节":1,"除夕":1,"元宵节":1,"龙抬头":1,"端午节":1,"七夕节":1,
+  "中秋节":1,"重阳节":1,"腊八节":1,"劳动节":1,"国庆节":1,"儿童节":1,
+  "圣诞节":1,"平安夜":1,"情人节":1
+};
+/* 复活节（西方，用匿名格里高利算法） */
+function easterDate(y){
+  var a=y%19, b=Math.floor(y/100), c=y%100;
+  var d=Math.floor(b/4), e=b%4, f=Math.floor((b+8)/25), g=Math.floor((b-f+1)/3);
+  var h=(19*a+b-d-g+15)%30, i=Math.floor(c/4), k=c%4;
+  var l=(32+2*e+2*i-h-k)%7, mm=Math.floor((a+11*h+22*l)/451);
+  var mon=Math.floor((h+l-7*mm+114)/31), day=((h+l-7*mm+114)%31)+1;
+  return new Date(y,mon-1,day);
+}
+/* 浮动节日：母亲节/父亲节/感恩节/黑色星期五/复活节 */
+function movableFests(y,m,d){
+  var out=[], dt=new Date(y,m-1,d), w=dt.getDay(), dom=dt.getDate();
+  if(m==5 && w==0 && dom>=8 && dom<=14) out.push("母亲节");
+  if(m==6 && w==0 && dom>=15 && dom<=21) out.push("父亲节");
+  if(m==11 && w==4 && dom>=22 && dom<=28){ out.push("感恩节"); }
+  if(m==11 && w==5 && dom>=23 && dom<=29) out.push("黑色星期五");
+  var ea=easterDate(y);
+  if(m==ea.getMonth()+1 && d==ea.getDate()) out.push("复活节");
+  var gf=new Date(ea.getFullYear(),ea.getMonth(),ea.getDate()-2);
+  if(m==gf.getMonth()+1 && d==gf.getDate()) out.push("受难日");
+  return out;
+}
+
+var Officer = ["建","除","满","平","定","执","破","危","成","收","开","闭"];
+var OfficerYi = [
+  ["出行","赴任","会友","见贵","求财"],
+  ["祭祀","祈福","求嗣","解除","扫舍","沐浴","求医"],
+  ["祭祀","祈福","结亲","开市","交易","立券"],
+  ["祭祀","修饰垣墙","平治道涂","余事勿取"],
+  ["嫁娶","纳采","交易","立券","安床","纳畜"],
+  ["祈福","求嗣","嫁娶","立约","捕捉"],
+  ["求医","治病","破屋","坏垣","余事勿取"],
+  ["祭祀","安床","拆卸","破土","启钻"],
+  ["嫁娶","开市","交易","立券","出行","动土","祈福"],
+  ["祭祀","纳财","签约","纳畜","捕捉","收账"],
+  ["祭祀","祈福","入学","开市","嫁娶","出行","动土"],
+  ["祭祀","筑堤","补垣","塞穴","安葬"]];
+var OfficerJi = [
+  ["动土","开仓","嫁娶","纳采"],
+  ["开市","动土","嫁娶","移徙","探病"],
+  ["服药","栽种","动土","移徙","入宅"],
+  ["嫁娶","开市","安葬","移徙"],
+  ["栽种","掘井","词讼","出行"],
+  ["移徙","远行","开仓","出货财"],
+  ["诸事不宜"],
+  ["登高","行船","出行","嫁娶","造屋"],
+  ["词讼","安门"],
+  ["安葬","破土","开市"],
+  ["安葬","行丧","破土"],
+  ["开市","出行","嫁娶","移徙","求医"]];
+
+function lYearDays(y){ var i,sum=348; for(i=0x8000;i>0x8;i>>=1){ sum += (lunarInfo[y-1900]&i)?1:0; } return sum+leapDays(y); }
+function leapMonth(y){ return lunarInfo[y-1900]&0xf; }
+function leapDays(y){ if(leapMonth(y)){ return (lunarInfo[y-1900]&0x10000)?30:29; } return 0; }
+function monthDays(y,m){ return (lunarInfo[y-1900] & (0x10000>>m))?30:29; }
+function solarDays(y,m){ if(m==2){ return ((y%4==0 && y%100!=0) || y%400==0)?29:28; } return solarMonth[m-1]; }
+
+/* 公历 -> 农历 {year,month,day,isLeap} */
+function toLunar(y,m,d){
+  var offset = Math.floor((Date.UTC(y,m-1,d) - Date.UTC(1900,0,31))/86400000);
+  var i, temp=0;
+  for(i=1900;i<2101 && offset>0;i++){ temp=lYearDays(i); offset-=temp; }
+  if(offset<0){ offset+=temp; i--; }
+  var year=i;
+  var leap=leapMonth(i);
+  var isLeap=false;
+  for(i=1;i<13 && offset>0;i++){
+    if(leap>0 && i==(leap+1) && !isLeap){ --i; isLeap=true; temp=leapDays(year); }
+    else{ temp=monthDays(year,i); }
+    if(isLeap && i==(leap+1)) isLeap=false;
+    offset-=temp;
+  }
+  if(offset==0 && leap>0 && i==leap+1){ if(isLeap){ isLeap=false; } else { isLeap=true; --i; } }
+  if(offset<0){ offset+=temp; --i; }
+  return {year:year, month:i, day:offset+1, isLeap:isLeap};
+}
+
+/* ---- 节气：天文算法（太阳视黄经 = n*15° 的时刻，取北京时间日期） ---- */
+var termDeg = [285,300,315,330,345,0,15,30,45,60,75,90,105,120,135,150,165,180,195,210,225,240,255,270];
+var D2R = Math.PI/180;
+function sunLon(ms){
+  var JD = ms/86400000 + 2440587.5;
+  var T = (JD - 2451545.0)/36525;
+  var L0 = 280.46646 + 36000.76983*T + 0.0003032*T*T;
+  var M = (357.52911 + 35999.05029*T - 0.0001537*T*T)*D2R;
+  var C = (1.914602 - 0.004817*T - 0.000014*T*T)*Math.sin(M)
+        + (0.019993 - 0.000101*T)*Math.sin(2*M)
+        + 0.000289*Math.sin(3*M);
+  var omega = (125.04 - 1934.136*T)*D2R;
+  var lam = L0 + C - 0.00569 - 0.00478*Math.sin(omega);
+  return ((lam % 360)+360)%360;
+}
+function lonDiff(ms,deg){
+  var d = sunLon(ms) - deg;
+  return ((d % 360)+540)%360 - 180;
+}
+function termMoment(y,n){
+  var guess = Date.UTC(y, Math.floor(n/2), (n%2==0)?6:21, 12, 0);
+  var deg = termDeg[n];
+  var lo = guess - 20*86400000, hi = guess + 20*86400000;
+  var flo = lonDiff(lo,deg), i, mid, fm;
+  for(i=0;i<60;i++){
+    mid = (lo+hi)/2; fm = lonDiff(mid,deg);
+    if((flo<0&&fm<0)||(flo>0&&fm>0)){ lo=mid; flo=fm; } else { hi=mid; }
+  }
+  return (lo+hi)/2;
+}
+var termCache = {};
+function termDaysOfYear(y){
+  if(!termCache[y]){
+    var arr = new Array(24);
+    for(var n=0;n<24;n++){
+      var dt = new Date(termMoment(y,n) + 8*3600000); /* 东八区 */
+      arr[n] = {m: dt.getUTCMonth()+1, d: dt.getUTCDate()};
+    }
+    termCache[y] = arr;
+  }
+  return termCache[y];
+}
+/* 节气在该公历年的日期（返回日，1-31）。n:0-23 */
+function sTermDay(y,n){ return termDaysOfYear(y)[n].d; }
+function termIdxOfDay(y,m,d){
+  var td = termDaysOfYear(y);
+  for(var n=0;n<24;n++){ if(td[n].m==m && td[n].d==d) return n; }
+  return -1;
+}
+
+/* 干支年/月的换年基准：
+   "CNY"     = 正月初一（春节）换年 —— 民用日历主流用法，生肖随之换
+   "LICHUN"  = 立春换年 —— 八字命理用法（仅作对照，一般不用） */
+var YEAR_BOUNDARY="CNY";
+
+/* 干支 */
+function yearPillarYear(y,m,d){
+  if(YEAR_BOUNDARY=="LICHUN"){
+    var ld = sTermDay(y,2);            /* 以立春换年 */
+    if(m<2 || (m==2 && d<ld)) return y-1;
+    return y;
+  }
+  /* 以春节换年：农历年即干支年，正月初一之前仍属上一农历年 */
+  return toLunar(y,m,d).year;
+}
+var secTerms = [0,2,4,6,8,10,12,14,16,18,20,22]; /* 小寒=丑月 ... 立春=寅月 */
+var secMonthIdx = [11,0,1,2,3,4,5,6,7,8,9,10]; /* 距立春的月序 */
+function monthIndex(y,m,d){ /* 0=寅月 */
+  if(YEAR_BOUNDARY=="LICHUN"){
+    var mi=10; /* 月初在小寒前 -> 上年大雪起子月 */
+    for(var i=0;i<12;i++){
+      var t=secTerms[i], tm=Math.floor(t/2)+1, td=sTermDay(y,t);
+      if(m>tm || (m==tm && d>=td)) mi=secMonthIdx[i];
+    }
+    return mi;
+  }
+  /* 以春节换年：正月即寅月 */
+  var lu=toLunar(y,m,d);
+  return lu.month-1;                    /* 闰月沿用本月月柱 */
+}
+function pillars(y,m,d){
+  var yy=yearPillarYear(y,m,d);
+  var ygz=((yy-4)%60+60)%60;
+  var yStem=ygz%10;
+  var mi=monthIndex(y,m,d);
+  var mStem=(yStem%5*2+2+mi)%10;
+  var mBranch=(2+mi)%12;
+  var cyc=Math.floor(Date.UTC(y,m-1,d)/86400000)+25567+10;
+  var dStem=cyc%10, dBranch=cyc%12;
+  return {yGan:Gan[yStem],yZhi:Zhi[ygz%12],yAnimal:Animals[ygz%12],
+          mGan:Gan[mStem],mZhi:Zhi[mBranch],mBranchIdx:mBranch,
+          dGan:Gan[dStem],dZhi:Zhi[dBranch],dStemIdx:dStem,dBranchIdx:dBranch};
+}
+function shaOf(dayBranch){
+  if(dayBranch==0||dayBranch==4||dayBranch==8) return "煞南";
+  if(dayBranch==2||dayBranch==6||dayBranch==10) return "煞北";
+  if(dayBranch==3||dayBranch==7||dayBranch==11) return "煞西";
+  return "煞东";
+}
+function festivals(y,m,d,lunar,termIdx){
+  var arr=[], i;
+  var sk=m+"-"+d;
+  if(sFests[sk]) arr.push(sFests[sk]);
+  var mv=movableFests(y,m,d);
+  for(i=0;i<mv.length;i++){ if(arr.indexOf(mv[i])<0) arr.push(mv[i]); }
+  if(!lunar.isLeap){
+    var lk=lunar.month+"-"+lunar.day;
+    if(lFests[lk] && arr.indexOf(lFests[lk])<0) arr.push(lFests[lk]);
+  }
+  if(lunar.month==12 && lunar.day==monthDays(lunar.year,12) && arr.indexOf("除夕")<0) arr.push("除夕");
+  if(termIdx>=0) arr.push(termNames[termIdx]);
+  /* 深圳中小学春秋假（仅义务教育阶段学校，不调休） */
+  var shl=schoolDay(y,m,d);
+  if(shl && arr.indexOf(shl)<0) arr.push(shl);
+  /* 自定义节日排在最前，确保在日历中优先显示 */
+  var mf=myFind(y,m,d,lunar);
+  for(i=0;i<mf.length;i++){ if(arr.indexOf(mf[i].name)<0) arr.unshift(mf[i].name); }
+  return arr;
+}
+/* 选取需要展示配图的名称：节气 / 大节日 / 自定义节日 */
+function posterPickName(f){
+  var i, n;
+  for(i=0;i<f.length;i++){
+    n=f[i];
+    if(termNames.indexOf(n)>=0) return n;
+  }
+  for(i=0;i<f.length;i++){ if(majorFests[f[i]] || MYF_MAP[f[i]]) return f[i]; }
+  return null;
+}
+/* 若选中的节日是自定义节日且填了配图来源，取出来给 posterEnsureImage */
+function posterPicOf(name){
+  var i;
+  for(i=0;i<MYF.length;i++){ if(MYF[i].name===name) return MYF[i].pic||""; }
+  return "";
+}
+function monthName(m){ return ["正月","二月","三月","四月","五月","六月","七月","八月","九月","十月","冬月","腊月"][m-1]; }
+function cDay(d){
+  if(d==10) return "初十";
+  if(d==20) return "二十";
+  if(d==30) return "三十";
+  var p=["初","十","廿","卅"][Math.floor(d/10)];
+  return p + numCn[d%10];
+}
+var PAP="#f7f0dc"; /* 纸面底色，用作月相阴影，与背景无缝融合 */
+var MSVGH='<svg class="wsvg moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">';
+var MDISC='<circle cx="16" cy="16" r="13" fill="#f4c542"/>';
+/* 农历初一起月相。盈（娥眉/上弦/盈凸）亮面在【右】，亏（亏凸/下弦/残）亮面在【左】 */
+function moonPhase(ld){
+  var s="";
+  if(ld==1) s='<circle cx="16" cy="16" r="13" fill="none" stroke="#c9a063" stroke-width="2" stroke-dasharray="3 3"/>';
+  else if(ld<=6) s=MDISC+'<circle cx="9" cy="16" r="13" fill="'+PAP+'"/>';          /* 娥眉月：遮左，亮右 */
+  else if(ld<=8) s=MDISC+'<path d="M16 3a13 13 0 0 0 0 26z" fill="'+PAP+'"/>';       /* 上弦月：遮左半 */
+  else if(ld<=14) s=MDISC+'<ellipse cx="8" cy="16" rx="8" ry="13" fill="'+PAP+'"/>';  /* 盈凸月：遮左，亮右 */
+  else if(ld<=16) s=MDISC;                                                           /* 满月 */
+  else if(ld<=21) s=MDISC+'<ellipse cx="24" cy="16" rx="8" ry="13" fill="'+PAP+'"/>'; /* 亏凸月：遮右，亮左 */
+  else if(ld<=23) s=MDISC+'<path d="M16 3a13 13 0 0 1 0 26z" fill="'+PAP+'"/>';       /* 下弦月：遮右半 */
+  else s=MDISC+'<circle cx="23" cy="16" r="13" fill="'+PAP+'"/>';                     /* 残月：遮右，亮左 */
+  var name="";
+  if(ld==1) name="新月(朔)";
+  else if(ld<=6) name="娥眉月";
+  else if(ld<=8) name="上弦月";
+  else if(ld<=14) name="盈凸月";
+  else if(ld<=16) name="满月(望)";
+  else if(ld<=21) name="亏凸月";
+  else if(ld<=23) name="下弦月";
+  else name="残月";
+  return [MSVGH+s+"</svg>", name];
+}
+
+/* 日出日落（NOAA 算法，按东八区输出） */
+var D2R=Math.PI/180, R2D=180/Math.PI;
+function sunTime(y,m,d,lat,lng,isRise){
+  var N1=Math.floor(275*m/9), N2=Math.floor((m+9)/12);
+  var N3=1+Math.floor((y-4*Math.floor(y/4)+2)/3);
+  var N=N1-N2*N3+d-30;
+  var lngHour=lng/15.0;
+  var t=N+((isRise?6:18)-lngHour)/24;
+  var M=(0.9856*t)-3.289;
+  var L=M+(1.916*Math.sin(M*D2R))+(0.020*Math.sin(2*M*D2R))+282.634;
+  L=((L%360)+360)%360;
+  var RA=Math.atan(0.91764*Math.tan(L*D2R))*R2D;
+  RA=((RA%360)+360)%360;
+  RA+=(Math.floor(L/90)*90-Math.floor(RA/90)*90);
+  RA/=15;
+  var sinDec=0.39782*Math.sin(L*D2R);
+  var cosDec=Math.cos(Math.asin(sinDec));
+  var cosH=(Math.cos(90.833*D2R)-sinDec*Math.sin(lat*D2R))/(cosDec*Math.cos(lat*D2R));
+  if(cosH>1||cosH<-1) return "--:--";
+  var H=isRise?360-Math.acos(cosH)*R2D:Math.acos(cosH)*R2D;
+  H/=15;
+  var T=H+RA-(0.06571*t)-6.622;
+  var local=T-lngHour+8;
+  local=((local%24)+24)%24;
+  var hh=Math.floor(local), mm=Math.floor((local-hh)*60);
+  return (hh<10?"0":"")+hh+":"+(mm<10?"0":"")+mm;
+}
+
+/* ============================================================
+   国务院放假调休安排 —— 分层同步策略
+   1) 内置种子：保证首次/离线也能用（已核对官方通知）
+   2) 本地缓存 holidays.txt：断网时沿用上次结果
+   3) 联网增量同步：只请求"缺失或已过期"的年份；
+      国务院未公布的年份接口返回空 -> 保留本地数据、不臆造，
+      每天自动复查一次，等官方公布后自动生效
+   ============================================================ */
+/* ============================================================
+   自定义节日（结婚纪念日、生日…）
+   存 myfest.txt：每行 type|name|date|text，姓名/文字按 \uXXXX 转义为纯 ASCII
+   type：Y=每年(公历)  L=每年(农历)  O=仅一次
+   ============================================================ */
+var MYF=[];        /* [{name,type,date,text}] */
+var MYF_MAP={};    /* name -> 1，供配图判定 */
+var mfEditIdx=-1;  /* -1=新增；>=0=正在编辑 MYF 的该下标 */
+var toastKey="";   /* 已弹过的提示，避免重复打扰 */
+var toastTimer=0;
+function myPath(){ var f=appFolder(); return f? f+"\\myfest.txt" : ""; }
+function myRebuildMap(){
+  MYF_MAP={};
+  for(var i=0;i<MYF.length;i++){ MYF_MAP[MYF[i].name]=1; }
+}
+function myNormalizeDate(str,type){
+  var s=String(str||"").replace(/^\s+|\s+$/g,"").replace(/[\/.．／]/g,"-").replace(/[年月]/g,"-");
+  s=s.replace(/--+/g,"-").replace(/^\-+|\-+$/g,"");
+  var p=s.split("-"), i, out=[];
+  if(type=="O"){
+    if(p.length!=3) return "";
+    if(!/^\d{4}$/.test(p[0])) return "";
+    if(!/^\d{1,2}$/.test(p[1]) || !/^\d{1,2}$/.test(p[2])) return "";
+    var yy=parseInt(p[0],10), mm=parseInt(p[1],10), dd2=parseInt(p[2],10);
+    if(yy<1900||yy>2100||mm<1||mm>12||dd2<1||dd2>31) return "";
+    return yy+"-"+("0"+mm).slice(-2)+"-"+("0"+dd2).slice(-2);
+  }
+  if(p.length!=2) return "";
+  var a=parseInt(p[0],10), b=parseInt(p[1],10);
+  if(isNaN(a)||isNaN(b)||a<1||a>12||b<1||b>31) return "";
+  return ("0"+a).slice(-2)+"-"+("0"+b).slice(-2);
+}
+function mySave(){
+  var p=myPath();
+  if(!p) return false;
+  try{
+    var fso=fsoObj();
+    if(!fso) return false;
+    var txt="#myfest v1\n", i;
+    /* 写 myfest.txt：type|name|date|text|pic
+   pic 为可选配图来源（图片网址 / 搜索关键词 / 本地图片文件名），留空表示自动搜索 */
+    for(i=0;i<MYF.length;i++){
+      txt+=MYF[i].type+"|"+ascEscape(MYF[i].name)+"|"+MYF[i].date+"|"+ascEscape(MYF[i].text||"")
+          +"|"+ascEscape(MYF[i].pic||"")+"\n";
+    }
+    var f=fso.CreateTextFile(p,true);
+    f.Write(txt); f.Close();
+    return true;
+  }catch(e){ return false; }
+}
+function myLoad(){
+  var p=myPath();
+  MYF=[]; myRebuildMap();
+  if(!p) return;
+  try{
+    var fso=fsoObj();
+    if(!fso.FileExists(p)) return;
+    var f=fso.OpenTextFile(p,1), s=f.ReadAll(); f.Close();
+    var lines=s.split("\n"), i, parts;
+    for(i=0;i<lines.length;i++){
+      var ln=lines[i].replace(/^\s+|\s+$/g,"");
+      if(!ln || ln.charAt(0)=="#") continue;
+      parts=ln.split("|");
+if(parts.length<4) continue;
+      if(parts[0]!=="Y" && parts[0]!=="L" && parts[0]!=="O") continue;
+      MYF.push({type:parts[0], name:ascUnescape(parts[1]), date:parts[2],
+                text:ascUnescape(parts[3]), pic:ascUnescape(parts[4]||"")});
+    }
+    myRebuildMap();
+  }catch(e){}
+}
+function myTypeLabel(t){
+  return (t=="L")?"每年农历":((t=="O")?"仅一次":"每年公历");
+}
+function myDesc(it){
+  if(it.type=="L") return "农历 "+it.date;
+  if(it.type=="O") return it.date;
+  return "每年 "+it.date;
+}
+function myFind(y,m,d,lunar){
+  var out=[], i, it, p, key=(y+"-"+("0"+m).slice(-2)+"-"+("0"+d).slice(-2));
+  for(i=0;i<MYF.length;i++){
+    it=MYF[i]; p=it.date.split("-");
+    if(p.length<2) continue;
+    if(it.type=="Y"){
+      if(parseInt(p[0],10)===m && parseInt(p[1],10)===d) out.push(it);
+    }else if(it.type=="L"){
+      if(lunar && !lunar.isLeap && parseInt(p[0],10)===lunar.month && parseInt(p[1],10)===lunar.day) out.push(it);
+    }else if(it.type=="O"){
+      if(it.date===key) out.push(it);
+    }
+  }
+  return out;
+}
+/* ---------- 弹窗 ---------- */
+function hideToast(){
+  var t=document.getElementById("toast");
+  if(t) t.style.display="none";
+  try{ if(toastTimer){ clearTimeout(toastTimer); toastTimer=0; } }catch(e){}
+}
+function showToast(title, body, key){
+  var t=document.getElementById("toast");
+  if(!t) return;
+  document.getElementById("toastTitle").innerHTML=title;
+  document.getElementById("toastBody").innerHTML=body||"";
+  t.style.display="block";
+  toastKey=key||"";
+  try{ if(toastTimer) clearTimeout(toastTimer); }catch(e){}
+  toastTimer=setTimeout(hideToast, 8000);
+}
+function bindToast(){
+  document.getElementById("toast").onclick=hideToast;
+}
+/* ---------- 自定义节日滚动大字（滚两遍自动退出） ---------- */
+var mqTimer=0, mqLoops=0;
+function stopMarquee(){
+  try{ if(mqTimer){ clearInterval(mqTimer); mqTimer=0; } }catch(e){}
+  var ov=document.getElementById("mqOverlay");
+  if(ov) ov.style.display="none";
+}
+function showMarquee(text, key){
+  var ov=document.getElementById("mqOverlay"), el=document.getElementById("mqText");
+  if(!ov||!el) return;
+  stopMarquee();
+  el.innerHTML=text;
+  ov.style.display="block";
+  if(key!==undefined && key!==null) toastKey=key;
+  var ovW=ov.clientWidth||386;
+  var tw=el.offsetWidth||ovW;
+  var x=ovW;
+  el.style.left=x+"px";
+  mqLoops=0;
+  try{ if(mqTimer) clearInterval(mqTimer); }catch(e){}
+  mqTimer=setInterval(function(){
+    x-=2;
+    if(x < -tw){ mqLoops++; if(mqLoops>=2){ stopMarquee(); return; } x=ovW; }
+    el.style.left=x+"px";
+  }, 25);
+}
+function bindMarquee(){
+  var ov=document.getElementById("mqOverlay");
+  if(ov) ov.onclick=stopMarquee;
+}
+
+var HOL={};        /* HOL[年] = {off:{"MM-DD":名称}, work:{"MM-DD":名称}} */
+var HOL_LAST="";   /* 上次成功同步日期 YYYY-MM-DD */
+var HOL_SOURCES=[
+  "http://timor.tech/api/holiday/year/",
+  "http://www.timor.tech/api/holiday/year/"
+];
+
+/* 内置种子（国务院办公厅 国办发明电〔2025〕7号，2026 年安排） */
+var HOL_SEED=[
+  "2026 off 01-01=元旦,01-02=元旦,01-03=元旦,02-15=春节,02-16=除夕,02-17=初一,02-18=初二,02-19=初三,02-20=初四,02-21=初五,02-22=初六,02-23=初七,04-04=清明节,04-05=清明节,04-06=清明节,05-01=劳动节,05-02=劳动节,05-03=劳动节,05-04=劳动节,05-05=劳动节,06-19=端午节,06-20=端午节,06-21=端午节,09-25=中秋节,09-26=中秋节,09-27=中秋节,10-01=国庆节,10-02=国庆节,10-03=国庆节,10-04=国庆节,10-05=国庆节,10-06=国庆节,10-07=国庆节",
+  "2026 work 01-04=元旦,02-14=春节,02-28=春节,05-09=劳动节,09-20=中秋节,10-10=国庆节"
+];
+function holInit(){
+  var i,j,parts;
+  HOL={};
+  for(i=0;i<HOL_SEED.length;i++){
+    parts=HOL_SEED[i].split(" ");
+    var rec=holYear(parts[0]);
+    rec[parts[1]]={};
+    var list=parts[2].split(",");
+    for(j=0;j<list.length;j++){
+      var kv=list[j].split("=");
+      rec[parts[1]][kv[0]]=kv[1]||"";
+    }
+  }
+}
+function holYear(y){
+  var k=String(y);
+  if(!HOL[k]) HOL[k]={off:{},work:{},got:false};
+  return HOL[k];
+}
+function holHasYear(y){ var k=String(y); return !!(HOL[k] && (HOL[k].got || Object.keys(HOL[k].off).length || Object.keys(HOL[k].work).length)); }
+function holDay(y,m,d){
+  var k=String(y);
+  var md=("0"+m).slice(-2)+"-"+("0"+d).slice(-2);
+  var rec=HOL[k];
+  if(!rec) return null;
+  if(rec.work && rec.work[md]!=null) return {type:"work", name:rec.work[md]||"班"};
+  if(rec.off && rec.off[md]!=null) return {type:"off", name:rec.off[md]||"休"};
+  return null;
+}
+function holCachePath(){ var f=appFolder(); return f? f+"\\holidays.txt" : ""; }
+
+/* ============================================================
+   深圳中小学校历：春秋假 + 寒暑假
+   ------------------------------------------------------------
+   架构与"国务院调休"一致：数据源 → 缓存 → 每日新鲜度检查 → 过期告警。
+   SCHOOL_SOURCES 为可插拔远程源，形如 "http://.../{学年}"，
+   一旦社区提供结构化接口，只需往这里补一条 URL，无需改动其它代码。
+
+   目前尚无可用的远程接口：深圳市教育局官网为 HTTPS（szeb.sz.gov.cn），
+   mshta/IE9 不支持 HTTPS；校历原文为 PDF 附件，无法在本地解析。
+   故先以内置权威数据为准，并做过期检测，确保不会静默展示过期数据。
+
+   数据来源（深圳市教育局官方发文）：
+     《深圳市 2026-2027 学年普通中小学校校历》  2026-05-15 印发
+     《关于全市中小学春秋假的安排》          2026-10-09 发布
+   适用范围：义务教育阶段学校（小学、初中）统一实施，幼儿园参照小学执行。
+             普通高中（寒假 1/30、暑假 7/17 起）、中等职业学校校历不同，未纳入。
+   ============================================================ */
+var SCHOOL_SOURCES=[];
+var SCHOOL_LAST="";        /* 上次检查日期 YYYY-MM-DD */
+function schoolSeedDefaults(){
+  return [
+    { city:"深圳", year:"2026-2027", scope:"义务教育阶段（小学、初中），幼儿园参照小学",
+      src:"深圳市教育局校历(2026-05-15 印发) + 春秋假安排(2026-10-09 发布)",
+      end:[2027,8,31],
+      terms:[
+        {n:"秋假", f:[2026,11,17], t:[2026,11,20]},
+        {n:"春假", f:[2027,4,1],   t:[2027,4,2]},
+        {n:"寒假", f:[2027,1,23],  t:[2027,2,21], sparse:true},
+        {n:"暑假", f:[2027,7,10],  t:[2027,8,31], sparse:true}
+      ]
+    }
+  ];
+}
+var SCHOOL_SEED=schoolSeedDefaults();
+function ymdKey(dt){ return dt.getFullYear()+"-"+("0"+(dt.getMonth()+1)).slice(-2)+"-"+("0"+dt.getDate()).slice(-2); }
+/* 把每个假期的起止区间逐日展开成 {城市:{"YYYY-MM-DD":名称}}
+   sparse=true（寒假/暑假这类长假期）只标首尾两天，且分别写成"××开始"/"××结束"，
+   避免同一天都显示"寒假"造成误解（看起来像假期中间日）。
+   非 sparse（秋假/春假等短假）逐日显示名称。 */
+function expandSchoolMap(){
+  var map={}, i, j, t, cur, end, rec, sameDay;
+  for(i=0;i<SCHOOL_SEED.length;i++){
+    rec=SCHOOL_SEED[i];
+    map[rec.city]=map[rec.city]||{};
+    for(j=0;j<rec.terms.length;j++){
+      t=rec.terms[j];
+      sameDay=(t.t[0]===t.f[0] && t.t[1]===t.f[1] && t.t[2]===t.f[2]);
+      if(t.sparse){
+        if(sameDay){
+          map[rec.city][ymdKey(new Date(t.f[0],t.f[1]-1,t.f[2]))]=t.n;
+        }else{
+          map[rec.city][ymdKey(new Date(t.f[0],t.f[1]-1,t.f[2]))]=t.n+"开始";
+          map[rec.city][ymdKey(new Date(t.t[0],t.t[1]-1,t.t[2]))]=t.n+"结束";
+        }
+        continue;
+      }
+      cur=new Date(t.f[0],t.f[1]-1,t.f[2]);
+      end=new Date(t.t[0],t.t[1]-1,t.t[2]);
+      while(cur<=end){
+        map[rec.city][ymdKey(cur)]=t.n;
+        cur=new Date(cur.getFullYear(),cur.getMonth(),cur.getDate()+1);
+      }
+    }
+  }
+  return map;
+}
+var SCHOOL_MAP=expandSchoolMap();
+function schoolSeedOf(city){
+  for(var i=0;i<SCHOOL_SEED.length;i++){ if(SCHOOL_SEED[i].city===city) return SCHOOL_SEED[i]; }
+  return null;
+}
+/* 内置数据覆盖到的最后一天；早于今天即视为可能过期 */
+function schoolCoverEnd(city){
+  var rec=schoolSeedOf(city);
+  return rec?rec.end:null;
+}
+function schoolStale(){
+  var e=schoolCoverEnd(cfg.city);
+  if(!e) return false;
+  var n=new Date();
+  if(n.getFullYear()!==e[0]) return (n.getFullYear()>e[0]);
+  if(n.getMonth()+1!==e[1]) return (n.getMonth()+1>e[1]);
+  return n.getDate()>e[2];
+}
+function schoolNeedSync(){
+  var n=new Date();
+  return (SCHOOL_LAST!==ymdKey(n));
+}
+/* 每日检查一次：有远程源则尝试拉取，否则沿用内置数据；只更新检查时间戳 */
+function syncSchool(force,cb){
+  cb=cb||function(){};
+  if(!force && !schoolNeedSync()){ cb("cached"); return; }
+  var urls=SCHOOL_SOURCES, i=0;
+  function next(){
+    if(i>=urls.length){
+      SCHOOL_LAST=ymdKey(new Date());
+      schoolSave();
+      cb("builtin");
+      return;
+    }
+    var u=urls[i++].replace("{学年}", schoolSeedOf(cfg.city)?schoolSeedOf(cfg.city).year:"");
+    xhrGet(u,function(ok,data){
+      if(ok && data && data.text && schoolParseRemote(data.text)){ SCHOOL_LAST=ymdKey(new Date()); schoolSave(); cb("synced"); return; }
+      next();
+    });
+  }
+  next();
+}
+/* 远程源解析入口：期望 JSON 形如 [{"city":"深圳","year":"...","end":"YYYY-MM-DD",
+   "terms":[{"n":"寒假","f":"YYYY-MM-DD","t":"YYYY-MM-DD"}, ...]}] */
+function schoolParseRemote(txt){
+  try{
+    var data=JSON.parse(txt);
+    if(!data.length) return false;
+    var i, j, out=[];
+    for(i=0;i<data.length;i++){
+      var s=data[i];
+      if(!s.city||!s.terms||!s.terms.length) continue;
+      var terms=[], okAll=true;
+      for(j=0;j<s.terms.length;j++){
+        var a=s.terms[j].f.split("-"), b=s.terms[j].t.split("-");
+        terms.push({n:s.terms[j].n, f:[+a[0],+a[1],+a[2]], t:[+b[0],+b[1],+b[2]]});
+      }
+      var endp=(s.end||"").split("-");
+      out.push({city:s.city, year:s.year||"", scope:s.scope||"", src:s.src||"远程源",
+                end:endp.length===3?[+endp[0],+endp[1],+endp[2]]:null, terms:terms});
+    }
+    if(!out.length) return false;
+    SCHOOL_SEED=out;
+    SCHOOL_MAP=expandSchoolMap();
+    return true;
+  }catch(e){ return false; }
+}
+/* 仅在"城市有数据 且 用户开启显示"时返回该日学校假期名，否则 null */
+function schoolDay(y,m,d){
+  if(!cfg.showSchool) return null;
+  var rec=SCHOOL_MAP[cfg.city];
+  if(!rec) return null;
+  return rec[ymdKey(new Date(y,m-1,d))]||null;
+}
+function schoolStatusText(){
+  var rec=schoolSeedOf(cfg.city);
+  if(!rec) return "无该校历数据";
+  return rec.year+"学年　数据覆盖至 "+rec.end[0]+"-"+("0"+rec.end[1]).slice(-2)+"-"+("0"+rec.end[2]).slice(-2)
+       + (schoolStale()?"　⚠已过期，请更新":"");
+}
+/* 春秋假/寒暑假目前只有深圳数据，其他城市隐藏该设置行并说明原因 */
+function updateSchoolRow(){
+  var row=document.getElementById("schRow"), tip=document.getElementById("schTip");
+  var has=!!SCHOOL_MAP[cfg.city];
+  if(row) row.style.display=has?"":"none";
+  if(!tip) return;
+  if(!has){ tip.innerHTML=""; return; }
+  var rec=schoolSeedOf(cfg.city), lines=[], i, t, d;
+  for(i=0;i<rec.terms.length;i++){
+    t=rec.terms[i]; d=t.t[0]-t.f[0];
+    lines.push(t.n+" "+t.f[0]+"/"+("0"+t.f[1]).slice(-2)+"-"
+              +(d===0?("0"+t.f[1]).slice(-2):("0"+t.t[1]).slice(-2)+"/"+("0"+t.t[2]).slice(-2)));
+  }
+  tip.innerHTML=escHtml(lines.join("　")+"\n适用范围："+rec.scope+"\n来源："+rec.src
+      + (schoolStale()?"\n⚠ 数据已过期，请在设置中重新同步。":""));
+  tip.style.whiteSpace="pre-wrap";
+}
+/* ---------- 校历手动编辑（与"自定义节日"同样的交互） ---------- */
+var schEditIdx=-1, schMsgTimer=0;
+function ymdStr(y,m,d){ return y+"-"+("0"+m).slice(-2)+"-"+("0"+d).slice(-2); }
+/* 接受 2027-01-23，也接受 01-23（按今年补全） */
+function parseYmd(s){
+  s=String(s||"").replace(/^\s+|\s+$/g,"");
+  var m=/^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(s);
+  if(m) return [parseInt(m[1],10),parseInt(m[2],10),parseInt(m[3],10)];
+  m=/^(\d{1,2})-(\d{1,2})$/.exec(s);
+  if(m) return [new Date().getFullYear(),parseInt(m[1],10),parseInt(m[2],10)];
+  return null;
+}
+function schTerms(){ var rec=schoolSeedOf(cfg.city); return rec?rec.terms:null; }
+function schMsg(txt,ok){
+  var el=document.getElementById("schMsg");
+  if(!el) return;
+  el.innerHTML=txt?("<span class='"+(ok?"ok":"err")+"'>"+escHtml(txt)+"</span>"):"";
+  try{ if(schMsgTimer){ clearTimeout(schMsgTimer); schMsgTimer=0; } }catch(e){}
+  if(txt){ try{ schMsgTimer=setTimeout(function(){ var e2=document.getElementById("schMsg"); if(e2) e2.innerHTML=""; },5000); }catch(e2){} }
+}
+function schSetBtn(editing){
+  var b=document.getElementById("schAdd"), c=document.getElementById("schCancel");
+  if(b) b.innerHTML=editing?"保存修改":"添加校历";
+  if(c) c.style.display=editing?"inline-block":"none";
+}
+/* 覆盖期随最远结束日自动重算，过期告警才不会误报 */
+function schRecalcEnd(){
+  var ts=schTerms(); if(!ts||!ts.length) return;
+  var mx=[0,0,0], i, e;
+  for(i=0;i<ts.length;i++){
+    e=ts[i].t;
+    if(e[0]>mx[0] || (e[0]===mx[0] && (e[1]>mx[1] || (e[1]===mx[1] && e[2]>mx[2])))) mx=e;
+  }
+  var rec=schoolSeedOf(cfg.city);
+  if(rec) rec.end=mx;
+}
+function schDaysOf(t){
+  var a=new Date(t.f[0],t.f[1]-1,t.f[2]), b=new Date(t.t[0],t.t[1]-1,t.t[2]);
+  return Math.round((b-a)/86400000)+1;
+}
+function renderSchList(){
+  var el=document.getElementById("schList");
+  if(!el) return;
+  var ts=schTerms();
+  if(!ts){ el.innerHTML="<div class='mfEmpty'>该城市暂无校历数据。</div>"; return; }
+  if(!ts.length){ el.innerHTML="<div class='mfEmpty'>还没有校历，在下面添加吧。</div>"; return; }
+  var html="", i, t;
+  for(i=0;i<ts.length;i++){
+    t=ts[i];
+    html+="<div class='mfItem"+(i===schEditIdx?" editing":"")+"' data-i='"+i+"'>"
+        +"<span class='e' data-i='"+i+"' title='编辑'>✎</span>"
+        +"<span class='x' data-si='"+i+"' title='删除'>✕</span>"
+        +"<b>"+escHtml(t.n)+"</b> <span class='d'>"
+        +ymdStr(t.f[0],t.f[1],t.f[2])+" ~ "+ymdStr(t.t[0],t.t[1],t.t[2])+"（"+schDaysOf(t)+"天）"
+        +"<span class='d'> · "+(t.sparse?"仅首尾两天标注":"逐日标注")+"</span></div>";
+  }
+  el.innerHTML=html;
+}
+function schStartEdit(idx){
+  var ts=schTerms();
+  if(!ts || !ts[idx]) return;
+  schEditIdx=idx;
+  var t=ts[idx];
+  var nE=document.getElementById("schName"), fE=document.getElementById("schFrom"), tE=document.getElementById("schTo");
+  if(nE) nE.value=t.n;
+  if(fE) fE.value=ymdStr(t.f[0],t.f[1],t.f[2]);
+  if(tE) tE.value=ymdStr(t.t[0],t.t[1],t.t[2]);
+  schSetBtn(true);
+  schMsg("正在修改「"+t.n+"」，改完点「保存修改」", true);
+  try{ if(nE) nE.focus(); }catch(e){}
+}
+function schClearForm(){
+  schEditIdx=-1;
+  var ids=["schName","schFrom","schTo"], i, e;
+  for(i=0;i<ids.length;i++){ e=document.getElementById(ids[i]); if(e) e.value=""; }
+  schSetBtn(false);
+}
+function schAddAction(){
+  var nE=document.getElementById("schName"), fE=document.getElementById("schFrom"), tE=document.getElementById("schTo");
+  if(!nE||!fE||!tE) return;
+  var name=String(nE.value||"").replace(/^\s+|\s+$/g,"");
+  if(!name){ schMsg("请先填写名称"); try{ nE.focus(); }catch(e1){} return; }
+  var a=parseYmd(fE.value);
+  if(!a){ schMsg("开始日期格式应为 2027-01-23"); try{ fE.focus(); }catch(e2){} return; }
+  var b=parseYmd(tE.value);
+  if(!b) b=a;
+  if(b[0]<a[0] || (b[0]===a[0] && (b[1]<a[1] || (b[1]===a[1] && b[2]<a[2])))){ var t=a; a=b; b=t; }  /* 起止写反自动纠正 */
+  var ts=schTerms();
+  if(!ts){ schMsg("该城市暂无校历数据"); return; }
+  var i;
+  for(i=0;i<ts.length;i++){
+    if(i===schEditIdx) continue;
+    if(ts[i].n===name && ymdStr(ts[i].f[0],ts[i].f[1],ts[i].f[2])===ymdStr(a[0],a[1],a[2])){
+      schMsg("「"+name+"」"+ymdStr(a[0],a[1],a[2])+" 已存在"); return;
+    }
+  }
+  var editing=schEditIdx>=0;
+  var rec={n:name, f:a, t:b};
+  if(editing) ts[schEditIdx]=rec; else ts.push(rec);
+  schRecalcEnd();
+  SCHOOL_MAP=expandSchoolMap();
+  schoolSave();
+  var nm=rec.n;
+  schClearForm();
+  renderSchList(); updateSchoolRow(); redrawCurrent();
+  schMsg(editing?("已保存「"+nm+"」的修改"):("已添加「"+nm+"」"+schDaysOf(rec)+"天"), true);
+}
+function bindSchoolUI(){
+  var addB=document.getElementById("schAdd");
+  if(addB) addB.onclick=schAddAction;
+  var canB=document.getElementById("schCancel");
+  if(canB) canB.onclick=function(){ schClearForm(); schMsg(""); };
+  var kf=function(e){ var k=e.keyCode||e.which; if(k==13){ try{ e.returnValue=false; }catch(x){} schAddAction(); } };
+  var ids=["schName","schFrom","schTo"], i, e2;
+  for(i=0;i<ids.length;i++){ e2=document.getElementById(ids[i]); if(e2) e2.onkeypress=kf; }
+  var list=document.getElementById("schList");
+  if(!list) return;
+  list.onclick=function(e){
+    var t=e.srcElement;
+    if(!t) return;
+    if(t.className=="x"){
+      var di=parseInt(t.getAttribute("data-si"),10);
+      if(isNaN(di)) return;
+      var ts=schTerms();
+      if(!ts || !ts[di]) return;
+      if(!confirm("删除「"+ts[di].n+"」？")) return;
+      if(schEditIdx===di) schClearForm();
+      else if(schEditIdx>di) schEditIdx--;
+      ts.splice(di,1);
+      schRecalcEnd();
+      SCHOOL_MAP=expandSchoolMap();
+      schoolSave();
+      renderSchList(); updateSchoolRow(); redrawCurrent();
+      return;
+    }
+    if(t.className=="e"){
+      var ei=parseInt(t.getAttribute("data-i"),10);
+      if(!isNaN(ei)) schStartEdit(ei);
+      return;
+    }
+    var p=t;
+    while(p && p.id!=="schList"){
+      if(String(p.className||"").indexOf("mfItem")>=0){
+        var ci=parseInt(p.getAttribute("data-i"),10);
+        if(!isNaN(ci)) schStartEdit(ci);
+        return;
+      }
+      p=p.parentNode;
+    }
+  };
+}
+/* ---------- 校历缓存（纯 ASCII，非 ASCII 转 \uXXXX） ---------- */
+function schoolCachePath(){ var f=appFolder(); return f? f+"\\school.txt" : ""; }
+var SCHOOL_FMT=2;   /* 缓存格式号：字段布局有变化时 +1，旧缓存自动作废重建 */
+function schoolSave(){
+  var p=schoolCachePath();
+  if(!p) return;
+  try{
+    var fso=fsoObj();
+    if(!fso) return;
+    var f=fso.CreateTextFile(p,true), i, j, rec, t, a, b;
+    f.Write("#school v"+SCHOOL_FMT+"\n");
+    f.Write("last|"+SCHOOL_LAST+"\n");
+    for(i=0;i<SCHOOL_SEED.length;i++){
+      rec=SCHOOL_SEED[i];
+      f.Write("y|"+ascEscape(rec.city)+"|"+ascEscape(rec.year)+"|"+ascEscape(rec.scope||"")
+        +"|"+ascEscape(rec.src||"")+"|"+(rec.end?rec.end.join("-"):"")+"|"+rec.terms.length+"\n");
+      for(j=0;j<rec.terms.length;j++){
+        t=rec.terms[j]; a=t.f.join("-"); b=t.t.join("-");
+        f.Write("t|"+ascEscape(t.n)+"|"+a+"|"+b+"|"+(t.sparse?1:0)+"\n");
+      }
+    }
+    f.Close();
+  }catch(e){}
+}
+function schoolLoad(){
+  var p=schoolCachePath();
+  SCHOOL_SEED=schoolSeedDefaults();
+  SCHOOL_MAP=expandSchoolMap();
+  if(!p) return;
+  try{
+    var fso=fsoObj();
+    if(!fso.FileExists(p)) return;
+    var f=fso.OpenTextFile(p,1), s=f.ReadAll(); f.Close();
+    var lines=s.split("\n"), i, out=[], cur=null, last="", fmt=0;
+    for(i=0;i<lines.length;i++){
+      var ln=lines[i].replace(/^\s+|\s+$/g,"");
+      if(!ln) continue;
+      if(ln.charAt(0)=="#"){
+        var vm=/#school\s+v(\d+)/.exec(ln);
+        if(vm) fmt=parseInt(vm[1],10);
+        continue;
+      }
+      if(fmt<SCHOOL_FMT){ continue; }   /* 旧格式缓存：整体忽略，用内置默认值重建 */
+      var pt=ln.split("|");
+      if(pt[0]=="last"){ last=pt[1]||""; continue; }
+      if(pt[0]=="y" && pt.length>=7){
+        var e=pt[5]?pt[5].split("-"):null;
+        cur={city:ascUnescape(pt[1]), year:ascUnescape(pt[2]), scope:ascUnescape(pt[3]),
+             src:ascUnescape(pt[4]), end:e&&e.length===3?[+e[0],+e[1],+e[2]]:null, terms:[]};
+        out.push(cur);
+      }else if(pt[0]=="t" && pt.length>=4 && cur){
+        var fa=pt[2].split("-"), tb=pt[3].split("-");
+        if(fa.length===3 && tb.length===3){
+          cur.terms.push({n:ascUnescape(pt[1]), f:[+fa[0],+fa[1],+fa[2]], t:[+tb[0],+tb[1],+tb[2]],
+                          sparse:(pt[4]==="1")});
+        }
+      }
+    }
+    if(out.length){ SCHOOL_SEED=out; SCHOOL_MAP=expandSchoolMap(); }
+    SCHOOL_LAST=last;
+  }catch(e){}
+}
+/* 缓存文件必须是纯 ASCII（系统代码页无法表示中文，会写成 ??），
+   故非 ASCII 字符统一转义为 \uXXXX */
+function ascEscape(s){
+  return String(s).replace(/[^\x20-\x7E]/g,function(c){
+    return "\\u"+("000"+c.charCodeAt(0).toString(16)).slice(-4);
+  });
+}
+function ascUnescape(s){
+  return String(s).replace(/\\u([0-9a-fA-F]{4})/g,function(m,h){
+    return String.fromCharCode(parseInt(h,16));
+  });
+}
+function holSave(){
+  var p=holCachePath();
+  if(!p) return;
+  try{
+    var fso=fsoObj(), txt="#v1 last="+HOL_LAST+"\n", k, rec, i, list;
+    for(k in HOL){
+      if(!Object.prototype.hasOwnProperty.call(HOL,k)) continue;
+      rec=HOL[k];
+      for(i=0;i<2;i++){
+        var kd=i?"work":"off";
+        if(!rec[kd]) continue;
+        list=[];
+        for(var key in rec[kd]){
+          if(Object.prototype.hasOwnProperty.call(rec[kd],key)) list.push(key+"="+ascEscape(rec[kd][key]));
+        }
+        if(list.length) txt+=k+" "+kd+" "+list.join(",")+"\n";
+      }
+    }
+    var f=fso.CreateTextFile(p,true);
+    f.Write(txt); f.Close();
+  }catch(e){}
+}
+function holLoad(){
+  var p=holCachePath();
+  if(!p) return;
+  try{
+    var fso=fsoObj();
+    if(!fso.FileExists(p)) return;
+    var f=fso.OpenTextFile(p,1), s=f.ReadAll(); f.Close();
+    var lines=s.split("\n"), i, j;
+    for(i=0;i<lines.length;i++){
+      var ln=lines[i].replace(/^\s+|\s+$/g,"");
+      if(!ln) continue;
+      if(ln.charAt(0)=="#"){
+        var m=/last\s*=\s*([0-9-]+)/.exec(ln);
+        if(m) HOL_LAST=m[1];
+        continue;
+      }
+      var parts=ln.split(" ");
+      if(parts.length<3) continue;
+      var rec=holYear(parts[0]);
+      rec[parts[1]]={};
+      var list=parts[2].split(",");
+      for(j=0;j<list.length;j++){
+        var kv=list[j].split("=");
+        rec[parts[1]][kv[0]]=ascUnescape(kv[1]||"");
+      }
+      rec.got=true;
+    }
+  }catch(e){}
+}
+function holParseApi(text,y){
+  /* 解析 "MM-DD":{"holiday":true/false,...,"name":"..."} */
+  var rec=holYear(y), body=/"holiday"\s*:\s*\{([\s\S]*)\}\s*\}\s*$/.exec(text);
+  if(!body) return false;
+  var inner=body[1], re=/"(\d{2}-\d{2})"\s*:\s*\{([\s\S]*?)\}(?=,"|\s*$)/g, m, found=false;
+  while((m=re.exec(inner))){
+    var one=m[2];
+    var isOff=/"holiday"\s*:\s*true/.test(one);
+    var nm=/"name"\s*:\s*"([^"]*)"/.exec(one);
+    var name=nm?nm[1]:"";
+    if(isOff){ rec.off[m[1]]=name; } else { rec.work[m[1]]=name; }
+    found=true;
+  }
+  if(found) rec.got=true;
+  return found;
+}
+function holSyncYear(y,cb){
+  var idx=0;
+  function attempt(){
+    if(idx>=HOL_SOURCES.length){ cb(false); return; }
+    var url=HOL_SOURCES[idx++]+y;
+    xhrGet(url,function(ok,data){
+      if(ok&&data&&data.text&&holParseApi(data.text,y)){ cb(true); }
+      else attempt();
+    });
+  }
+  attempt();
+}
+function holNeedSync(){
+  var n=new Date();
+  var today=n.getFullYear()+"-"+("0"+(n.getMonth()+1)).slice(-2)+"-"+("0"+n.getDate()).slice(-2);
+  return (HOL_LAST!==today);
+}
+function holStatusText(){
+  var n=new Date(), out=[], ys=[n.getFullYear(), n.getFullYear()+1];
+  for(var i=0;i<ys.length;i++){
+    out.push(ys[i]+"年"+(holHasYear(ys[i])?"已同步":"待公布"));
+  }
+  return out.join("　");
+}
+function syncHolidays(force,cb){
+  cb=cb||function(){};
+  if(!force && !holNeedSync()){ cb("cached"); return; }
+  var n=new Date();
+  var years=[n.getFullYear(), n.getFullYear()+1];
+  var i=0, updated=0;
+  function next(){
+    if(i>=years.length){
+      var d=new Date();
+      HOL_LAST=d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2);
+      holSave();
+      cb(updated?"synced":"cached", updated);
+      return;
+    }
+    var y=years[i++];
+    if(!force && holHasYear(y)){ next(); return; }   /* 已有数据，除非强制，否则不重复请求 */
+    defer(function(){
+      holSyncYear(y,function(ok){
+        if(ok) updated++;
+        next();
+      });
+    }, 200);
+  }
+  next();
+}
+
+/* ============================================================
+   实况天气（wttr.in，HTTP 可用）
+   sojson 的 wendu/shidu 是整点级更新，常落后 1 小时以上，
+   这里补一路实况：温度/体感/湿度/风/气压/能见度 + 观测时间
+   ============================================================ */
+var live=null, liveAt="";
+function wmoCn(code){
+  var c=parseInt(code,10);
+  if(c===113||c===200) return "晴";
+  if(c===116||c===227||c===248) return "晴间多云";
+  if(c===119) return "多云";
+  if(c===122) return "阴";
+  if(c===143||c===260) return "雾";
+  if(c===176||c===263||c===266||c===281||c===284) return "毛毛雨";
+  if(c===179||c===317||c===320||c===323||c===326) return "小雪";
+  if(c===182||c===335||c===338||c===350) return "雨夹雪";
+  if(c===185||c===311||c===314) return "冻雨";
+  if(c===293||c===296) return "小雨";
+  if(c===299||c===302) return "中雨";
+  if(c===305||c===308) return "大雨";
+  if(c===329||c===332) return "大雪";
+  if(c===353||c===356||c===359) return "阵雨";
+  if(c===362||c===365) return "阵性雨夹雪";
+  if(c===368||c===371) return "阵雪";
+  if(c===374||c===377) return "阵性冰粒";
+  if(c===386||c===389) return "雷阵雨";
+  if(c===392||c===395) return "雷雪";
+  /* 标准 WMO 编码（备用） */
+  if(c===0) return "晴";
+  if(c===1) return "晴间多云";
+  if(c===2) return "多云";
+  if(c===3) return "阴";
+  if(c===45||c===48) return "雾";
+  if(c>=51&&c<=57) return "毛毛雨";
+  if(c===61) return "小雨";
+  if(c===63) return "中雨";
+  if(c===65) return "大雨";
+  if(c===66||c===67) return "冻雨";
+  if(c===71) return "小雪";
+  if(c===73) return "中雪";
+  if(c===75) return "大雪";
+  if(c===77) return "雪粒";
+  if(c===80||c===81) return "阵雨";
+  if(c===82) return "强阵雨";
+  if(c===85||c===86) return "阵雪";
+  if(c===95) return "雷阵雨";
+  if(c===96||c===99) return "雷雨伴冰雹";
+  return "";
+}
+var windMap={N:"北",NNE:"东北",NE:"东北",ENE:"东北",E:"东",ESE:"东南",SE:"东南",SSE:"东南",S:"南",SSW:"南",SW:"西南",WSW:"西南",W:"西",WNW:"西北",NW:"西北",NNW:"西北"};
+function windCn(dir){ return windMap[dir]||dir||""; }
+function gval(t,re){ var m=re.exec(t); return m?m[1]:null; }
+function parseLiveText(t){
+  var temp=gval(t,/"temp_C"\s*:\s*"([^"]*)"/);
+  if(temp==null) return null;
+  var code=gval(t,/"weatherCode"\s*:\s*"([^"]*)"/);
+  var desc=gval(t,/"weatherDesc"\s*:\s*\[\s*\{\s*"value"\s*:\s*"([^"]*)"/);
+  return {
+    temp:temp,
+    feels:gval(t,/"FeelsLikeC"\s*:\s*"([^"]*)"/)||"",
+    hum:gval(t,/"humidity"\s*:\s*"([^"]*)"/)||"",
+    pres:gval(t,/"pressure"\s*:\s*"([^"]*)"/)||"",
+    vis:gval(t,/"visibility"\s*:\s*"([^"]*)"/)||"",
+    wind:windCn(gval(t,/"winddir16Point"\s*:\s*"([^"]*)"/)),
+    windKmh:gval(t,/"windspeedKmph"\s*:\s*"([^"]*)"/)||"",
+    type:(wmoCn(code)||""),
+    desc:desc||"",
+    max:gval(t,/"maxtempC"\s*:\s*"([^"]*)"/)||"",
+    min:gval(t,/"mintempC"\s*:\s*"([^"]*)"/)||""
+  };
+}
+function fetchLive(){
+  var url="http://wttr.in/"+encodeURIComponent(cfg.city)+"?format=j1";
+  var xhr=null;
+  try{ xhr=new ActiveXObject("MSXML2.ServerXMLHTTP.6.0"); }catch(e){ return; }
+  if(!xhr) return;
+  try{
+    try{ xhr.setTimeouts(20000,20000,20000,20000); }catch(e0){}
+    xhr.open("GET",url,true);
+    try{ xhr.setRequestHeader("User-Agent","Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.2; Trident/6.0)"); }catch(e1){}
+    xhr.onreadystatechange=function(){
+      if(xhr.readyState==4 && xhr.status==200){
+        try{
+          var v=parseLiveText(xhr.responseText);
+          if(v){ live=v; liveAt=nowClock(); if(!inMonthView) renderWeatherLine(cur.getFullYear(),cur.getMonth()+1,cur.getDate()); }
+        }catch(e){}
+      }
+    };
+    xhr.send(null);
+  }catch(e){}
+}
+function nowClock(){
+  var d=new Date();
+  return (("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2));
+}
+
+/* ============================================================
+   天气（中国气象局数据，sojson 接口，国内可直连）
+   ============================================================ */
+var cityMap={
+  "北京":{code:"101010100",lat:39.9042,lng:116.4074},
+  "上海":{code:"101020100",lat:31.2304,lng:121.4737},
+  "深圳":{code:"101280601",lat:22.5431,lng:114.0579},
+  "广州":{code:"101280101",lat:23.1291,lng:113.2644},
+  "杭州":{code:"101210101",lat:30.2741,lng:120.1551},
+  "成都":{code:"101270101",lat:30.5728,lng:104.0668},
+  "武汉":{code:"101200101",lat:30.5928,lng:114.3055},
+  "南京":{code:"101190101",lat:32.0603,lng:118.7969},
+  "重庆":{code:"101040100",lat:29.5630,lng:106.5516},
+  "天津":{code:"101030100",lat:39.3434,lng:117.3616},
+  "西安":{code:"101110101",lat:34.3416,lng:108.9398},
+  "苏州":{code:"101190401",lat:31.2990,lng:120.5853},
+  "长沙":{code:"101250101",lat:28.2282,lng:112.9388},
+  "沈阳":{code:"101070101",lat:41.8057,lng:123.4315},
+  "哈尔滨":{code:"101050101",lat:45.8038,lng:126.5350},
+  "郑州":{code:"101180101",lat:34.7466,lng:113.6253},
+  "青岛":{code:"101120201",lat:36.0671,lng:120.3826},
+  "大连":{code:"101070201",lat:38.9140,lng:121.6143},
+  "福州":{code:"101230101",lat:26.0745,lng:119.2965},
+  "厦门":{code:"101230201",lat:24.4798,lng:118.0894},
+  "昆明":{code:"101290101",lat:25.0389,lng:102.7183},
+  "贵阳":{code:"101260101",lat:26.6470,lng:106.6302},
+  "南宁":{code:"101300101",lat:22.8290,lng:108.9532},
+  "海口":{code:"101310101",lat:20.0440,lng:110.1990},
+  "兰州":{code:"101160101",lat:36.0611,lng:103.8343},
+  "太原":{code:"101100101",lat:37.8706,lng:112.5489},
+  "石家庄":{code:"101090101",lat:38.0428,lng:114.5149},
+  "呼和浩特":{code:"101080101",lat:40.8426,lng:111.7511},
+  "乌鲁木齐":{code:"101130101",lat:43.8256,lng:87.6168},
+  "拉萨":{code:"101140101",lat:29.6500,lng:91.1000},
+  "银川":{code:"101170101",lat:38.4872,lng:106.2309},
+  "西宁":{code:"101150101",lat:36.6171,lng:101.7782},
+  "南昌":{code:"101240101",lat:28.6820,lng:115.8579},
+  "济南":{code:"101120101",lat:36.6512,lng:117.1201},
+  "合肥":{code:"101220101",lat:31.8206,lng:117.2272},
+  "长春":{code:"101060101",lat:43.8171,lng:125.3235}
+};
+/* ---- 彩色天气图标（内联 SVG，IE9 模式下 emoji 只有黑白，故自行绘制） ---- */
+var SVGH='<svg class="wsvg" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">';
+var SMH='<svg class="wsvg sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">';
+var SR='<g stroke="#ff8f00" stroke-width="1.8" stroke-linecap="round"><line x1="16" y1="2.2" x2="16" y2="4.6"/><line x1="6" y1="12" x2="8.4" y2="12"/><line x1="26" y1="12" x2="23.6" y2="12"/><line x1="8.9" y1="4.9" x2="10.6" y2="6.6"/><line x1="23.1" y1="4.9" x2="21.4" y2="6.6"/><line x1="8.9" y1="19.1" x2="10.6" y2="17.4"/><line x1="23.1" y1="19.1" x2="21.4" y2="17.4"/></g>';
+var HZ='<line x1="2" y1="28.5" x2="30" y2="28.5" stroke="#a1887f" stroke-width="2.2" stroke-linecap="round"/>';
+var ICON_SRISE=SMH+'<circle cx="16" cy="12.5" r="6.2" fill="#ffb300"/>'+SR+'<path d="M16 26.5l-4.6-7.4h9.2z" fill="#2e7d32"/>'+HZ+"</svg>";
+var ICON_SSET =SMH+'<circle cx="16" cy="19" r="6.2" fill="#ef6c00"/>'+'<g stroke="#ef6c00" stroke-width="1.8" stroke-linecap="round"><line x1="16" y1="27.6" x2="16" y2="25.2"/><line x1="6" y1="19" x2="8.4" y2="19"/><line x1="26" y1="19" x2="23.6" y2="19"/><line x1="8.9" y1="11.9" x2="10.6" y2="13.6"/><line x1="23.1" y1="11.9" x2="21.4" y2="13.6"/><line x1="8.9" y1="26.1" x2="10.6" y2="24.4"/><line x1="23.1" y1="26.1" x2="21.4" y2="24.4"/></g>'+'<path d="M16 5.5l-4.6 7.4h9.2z" fill="#c62828"/>'+HZ+"</svg>";
+var CLOUD_L='<path d="M10 23h13a4.5 4.5 0 0 0 0-9 6.5 6.5 0 0 0-12 1.8A4 4 0 0 0 10 23z" fill="#cfd8dc"/>';
+var CLOUD_D='<path d="M10 23h13a4.5 4.5 0 0 0 0-9 6.5 6.5 0 0 0-12 1.8A4 4 0 0 0 10 23z" fill="#90a4ae"/>';
+var SUNRAYS='<g stroke="#ff8f00" stroke-width="2" stroke-linecap="round"><line x1="16" y1="1.6" x2="16" y2="4.6"/><line x1="16" y1="27.4" x2="16" y2="30.4"/><line x1="1.6" y1="16" x2="4.6" y2="16"/><line x1="27.4" y1="16" x2="30.4" y2="16"/><line x1="5.5" y1="5.5" x2="7.6" y2="7.6"/><line x1="24.4" y1="24.4" x2="26.5" y2="26.5"/><line x1="5.5" y1="26.5" x2="7.6" y2="24.4"/><line x1="24.4" y1="7.6" x2="26.5" y2="5.5"/></g>';
+var DROPS3='<g stroke="#1e88e5" stroke-width="2.4" stroke-linecap="round"><line x1="11" y1="25" x2="9.5" y2="29.5"/><line x1="16" y1="25" x2="14.5" y2="29.5"/><line x1="21" y1="25" x2="19.5" y2="29.5"/></g>';
+var DROPS5='<g stroke="#0d47a1" stroke-width="2.2" stroke-linecap="round"><line x1="8" y1="25" x2="6.5" y2="30"/><line x1="12" y1="25" x2="10.5" y2="30"/><line x1="16" y1="25" x2="14.5" y2="30"/><line x1="20" y1="25" x2="18.5" y2="30"/><line x1="24" y1="25" x2="22.5" y2="30"/></g>';
+var FLAKES='<g stroke="#29b6f6" stroke-width="1.8" stroke-linecap="round"><line x1="11" y1="25.5" x2="11" y2="30"/><line x1="9" y1="26.6" x2="13" y2="28.9"/><line x1="13" y1="26.6" x2="9" y2="28.9"/><line x1="20" y1="25.5" x2="20" y2="30"/><line x1="18" y1="26.6" x2="22" y2="28.9"/><line x1="22" y1="26.6" x2="18" y2="28.9"/></g>';
+var BOLT='<path d="M17.5 23l-4.5 6.5h3l-1.6 5.2 5.3-7.4h-3.1l1.9-4.3z" fill="#ffca28" stroke="#ff8f00" stroke-width="0.8"/>';
+var FOGL='<g stroke="#78909c" stroke-width="2" stroke-linecap="round"><line x1="5" y1="26" x2="27" y2="26"/><line x1="8" y1="29.5" x2="24" y2="29.5"/></g>';
+function weatherIcon(type){
+  var t=type||"";
+  if(t.indexOf("台风")>=0) return SVGH+'<circle cx="16" cy="16" r="13" fill="none" stroke="#c0392b" stroke-width="2.5"/>'
+    +'<path d="M16 6c-2.5 3.4-2.5 6.6 0 10 2.5-3.4 2.5-6.6 0-10z" fill="#e74c3c"/>'
+    +'<path d="M16 26c-2.5-3.4-2.5-6.6 0-10 2.5 3.4 2.5 6.6 0 10z" fill="#e74c3c"/>'
+    +'<path d="M6 16c3.4-2.5 6.6-2.5 10 0-3.4 2.5-6.6 2.5-10 0z" fill="#e74c3c"/>'
+    +'<path d="M26 16c-3.4 2.5-6.6 2.5-10 0 3.4-2.5 6.6-2.5 10 0z" fill="#e74c3c"/>'
+    +'<circle cx="16" cy="16" r="2.6" fill="#fff" stroke="#c0392b" stroke-width="1.2"/></svg>';
+  if(t.indexOf("雷")>=0) return SVGH+CLOUD_D+BOLT+"</svg>";
+  if(t.indexOf("暴雨")>=0||t.indexOf("大雨")>=0) return SVGH+CLOUD_D+DROPS5+"</svg>";
+  if(t.indexOf("雨")>=0) return SVGH+CLOUD_L+DROPS3+"</svg>";
+  if(t.indexOf("雪")>=0) return SVGH+CLOUD_L+FLAKES+"</svg>";
+  if(t.indexOf("雾")>=0||t.indexOf("霾")>=0) return SVGH+CLOUD_L+FOGL+"</svg>";
+  if(t.indexOf("晴")>=0&&t.indexOf("多云")>=0) return SVGH+'<circle cx="12" cy="12" r="6" fill="#ffc107"/>'+CLOUD_L+"</svg>";
+  if(t.indexOf("多云")>=0||t.indexOf("晴间")>=0) return SVGH+'<circle cx="11" cy="11" r="5.4" fill="#ffc107"/>'+CLOUD_L+"</svg>";
+  if(t.indexOf("晴")>=0) return SVGH+'<circle cx="16" cy="16" r="7.5" fill="#ffb300"/>'+SUNRAYS+"</svg>";
+  return SVGH+CLOUD_D+"</svg>";
+}
+
+/* ============================================================
+   应用状态与界面
+   ============================================================ */
+var cur=new Date();
+var viewY, viewM;
+var inMonthView=false;
+var cfg={city:"北京",code:"101010100",lat:39.9042,lng:116.4074,weekStart:1,showSchool:0};
+var lastWeather=null, lastFetchTs=0, weatherFailed=false, weatherRetry=0;
+var renderedYMD=null;
+var lastTodayKey=0;   /* 上一次心跳看到的"今天"（YYYYMMDD），用于跨天检测 */
+var posterKey=null, posterDetail=false, posterBusy=0;
+
+function isToday(y,m,d){
+  var n=new Date();
+  return n.getFullYear()==y && n.getMonth()+1==m && n.getDate()==d;
+}
+function todayKeyOf(dt){
+  return dt.getFullYear()*10000+(dt.getMonth()+1)*100+dt.getDate();
+}
+/* dt 是否等于 key 那天（key 形如 20261014） */
+function isKeyOf(key, dt){
+  return !!dt && todayKeyOf(dt)===key;
+}
+function fsoObj(){ try{ return new ActiveXObject("Scripting.FileSystemObject"); }catch(e){ return null; } }
+function appFolder(){
+  try{ return fsoObj().GetParentFolderName(location.pathname.replace(/\//g,"\\")); }catch(e){ return ""; }
+}
+function parseCfgText(s){
+  var c={}, m;
+  m=/"city"\s*:\s*"([^"]*)"/.exec(s);       if(m) c.city=m[1];
+  m=/"lat"\s*:\s*(-?[0-9.]+)/.exec(s);      if(m) c.lat=parseFloat(m[1]);
+  m=/"lng"\s*:\s*(-?[0-9.]+)/.exec(s);      if(m) c.lng=parseFloat(m[1]);
+  m=/"code"\s*:\s*"([^"]*)"/.exec(s);       if(m) c.code=m[1];
+  m=/"weekStart"\s*:\s*([01])/.exec(s);     if(m) c.weekStart=parseInt(m[1],10);
+  m=/"showSchool"\s*:\s*([01])/.exec(s);   if(m) c.showSchool=parseInt(m[1],10);
+  if(isNaN(c.lat)||isNaN(c.lng)) return null;
+  return c;
+}
+function codeToCity(code){
+  for(var k in cityMap){
+    if(cityMap[k].code==code) return {city:k, code:code, lat:cityMap[k].lat, lng:cityMap[k].lng};
+  }
+  return null;
+}
+function loadCfg(){
+  var folder=appFolder();
+  if(!folder) return;
+  try{
+    var fso=fsoObj(), p=folder+"\\huangli_cfg.json";
+    if(!fso.FileExists(p)) return;
+    var f=fso.OpenTextFile(p,1);
+    var s=f.ReadAll(); f.Close();
+    var c=parseCfgText(s);
+    if(!c) return;
+    /* 每周起始日（0=周日, 1=周一）与城市无关，需在下面重建 c 之后回填 */
+    var ws=(c.weekStart===0)?0:1;
+    var shRaw=c.showSchool;   /* 可能为 undefined（老配置没有该字段） */
+    /* 以城市编码为准，保证城市名/经纬度/天气编码三者始终一致 */
+    if(c.code){
+      var byCode=codeToCity(c.code);
+      if(byCode) c=byCode;
+      else c={city:(c.city||"北京"), code:c.code, lat:c.lat, lng:c.lng};
+    }else if(c.city && cityMap[c.city]){
+      c={city:c.city, code:cityMap[c.city].code, lat:cityMap[c.city].lat, lng:cityMap[c.city].lng};
+    }else{
+      return; /* 配置损坏，回到默认城市 */
+    }
+    cfg=c;
+    cfg.weekStart=ws;
+    /* 老配置缺该字段时：深圳默认开启春秋假，其他城市默认关闭 */
+    cfg.showSchool=(shRaw===undefined)?((cfg.city==="深圳")?1:0):(shRaw===1?1:0);
+  }catch(e){}
+}
+function saveCfg(){
+  var folder=appFolder();
+  if(!folder) return;
+  try{
+    var fso=fsoObj();
+    /* 只写 ASCII（城市编码+经纬度），彻底避开系统代码页的中文编码问题 */
+    var f=fso.CreateTextFile(folder+"\\huangli_cfg.json",true);
+    f.Write('{"code":"'+cfg.code+'","lat":'+cfg.lat+',"lng":'+cfg.lng+',"weekStart":'+(cfg.weekStart===0?0:1)+',"showSchool":'+(cfg.showSchool===1?1:0)+'}\r\n');
+    f.Close();
+  }catch(e){}
+}
+
+/* ============================================================
+   节日 / 节气 大图海报
+   ============================================================ */
+function posterGrad(name){
+  if(/雪|寒|冬|霜/.test(name)) return ["#16305c","#93b7dd"];
+  if(/秋|露|分|处暑/.test(name)) return ["#7d4310","#e2b25c"];
+  if(/春|花|清|植|七|情/.test(name)) return ["#7a1f43","#e8a3b6"];
+  if(/夏|暑|火|龙|端|劳/.test(name)) return ["#7d1d14","#e07c3c"];
+  if(/雪/.test(name)) return ["#16305c","#93b7dd"];
+  return ["#8e1b12","#e0b155"];
+}
+function posterSafe(name){ return String(name).replace(/[\\\/:*?"<>|]/g,""); }
+/* 配图来源解析：依次尝试 jpg / jpeg / png / gif / bmp */
+var POSTER_EXT=["jpg","jpeg","png","gif","bmp"];
+function posterImgDir(){ var f=appFolder(); return f? f+"\\images" : ""; }
+function posterRelOf(name,ext){
+  var d=posterImgDir();
+  if(!d) return "";
+  return "images/"+posterSafe(name)+"."+ext;
+}
+function posterAbsOf(name,ext){
+  var d=posterImgDir();
+  if(!d) return "";
+  return d+"\\"+posterSafe(name)+"."+ext;
+}
+/* 找出该节日实际存在的本地图片扩展名；没有则返回空 */
+function posterLocalExt(name){
+  var i, p;
+  try{ var fso=fsoObj(); if(!fso) return ""; }catch(e){ return ""; }
+  for(i=0;i<POSTER_EXT.length;i++){
+    p=posterAbsOf(name,POSTER_EXT[i]);
+    if(p && fso.FileExists(p)) return POSTER_EXT[i];
+  }
+  return "";
+}
+function posterRel(name){ return "images/"+posterSafe(name)+".jpg"; }
+function posterAbs(name){
+  var folder=appFolder();
+  if(!folder) return "";
+  return folder+"\\images\\"+posterSafe(name)+".jpg";
+}
+function posterHave(name){ return !!posterLocalExt(name); }
+/* pic 字段的含义：
+   空        -> 用节日名搜索（默认）
+   http 开头 -> 直接当图片网址使用，不搜索
+   其它文字  -> 先当本地图片文件名(同名.图片)找，找不到就用它当搜索关键词 */
+function posterPicKind(pic){
+  var p=String(pic||"").replace(/^\s+|\s+$/g,"");
+  if(!p) return {kind:"auto",val:""};
+  if(/^https?:\/\//i.test(p)) return {kind:"url",val:p};
+  return {kind:"kw",val:p};
+}
+function xhrGet(url,onDone,isImg){
+  var xhr=null, finished=false;
+  try{ xhr=new ActiveXObject("MSXML2.ServerXMLHTTP.6.0"); }catch(e){ xhr=null; }
+  if(!xhr){ onDone(false,null); return; }
+  function finish(ok,data){ if(finished) return; finished=true; try{ onDone(ok,data); }catch(e2){} }
+  try{
+    try{ xhr.setTimeouts(40000,10000,10000,30000); }catch(e6){}
+    xhr.open("GET",url,true);
+    try{ xhr.setRequestHeader("User-Agent","Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1)"); }catch(e2){}
+    if(isImg){
+      try{ xhr.setRequestHeader("Accept","image/jpeg,image/png,*/*"); }catch(e7){}
+      try{ xhr.setRequestHeader("Referer", /bing\.com/i.test(url)?"http://cn.bing.com/":"http://image.baidu.com/"); }catch(e8){}
+    }
+    xhr.onreadystatechange=function(){
+      if(xhr.readyState==4){
+        if(xhr.status==200){
+          var body=null, text=null;
+          try{ body=xhr.responseBody; }catch(e9){}
+          try{ text=xhr.responseText; }catch(e10){}
+          finish(true,{text:text, body:body});
+        }else{ finish(false,null); }
+      }
+    };
+    xhr.send(null);
+  }catch(e){ finish(false,null); }
+}
+function isImgUrl(u){
+  if(/\.(jpg|jpeg|png|gif|bmp|webp)(\?|$)/i.test(u)) return true;
+  if(/\/it\/u=/.test(u)) return true;
+  if(/\/thumb|\/bdimg|\/pic|\/image/i.test(u)) return true;
+  return false;
+}
+function baiduImages(name,onList){
+  var url="http://image.baidu.com/search/acjson?tn=resultjson_com&ipn=rj&ct=201326592&word="
+        +encodeURIComponent(name)+"&pn=0&rn=12";
+  xhrGet(url,function(ok,data){
+    if(!ok||!data||!data.text){ onList([]); return; }
+    var t=data.text, pairs=[], re=/"(objURL|middleURL|thumbURL|fromURLMiddle)"\s*:\s*"(https?:\/\/[^"]+)"/g, m;
+    while((m=re.exec(t))){ pairs.push({k:m[1],u:m[2]}); }
+    var order=["middleURL","objURL","fromURLMiddle","thumbURL"], out=[], oi, p;
+    for(oi=0;oi<order.length;oi++){
+      for(p=0;p<pairs.length;p++){
+        if(pairs[p].k!==order[oi]) continue;
+        var u=pairs[p].u;
+        if(!isImgUrl(u)) continue;
+        if(/logo|icon|qrcode/i.test(u)) continue;
+        if(out.join("|").indexOf(u)>=0) continue;
+        out.push(u);
+        if(out.length>=8) break;
+      }
+      if(out.length>=8) break;
+    }
+    onList(out);
+  });
+}
+function bingImages(name,onList){
+  var url="http://cn.bing.com/search?q="+encodeURIComponent(name)+"&form=HDRSC2&first=1";
+  xhrGet(url,function(ok,data){
+    if(!ok||!data||!data.text){ onList([]); return; }
+    var t=data.text, out=[], re=/"murl"\s*:\s*"(https?:\/\/[^"]+\.(?:jpg|jpeg|png))"/gi, m;
+    while((m=re.exec(t)) && out.length<8){
+      if(out.join("|").indexOf(m[1])>=0) continue;
+      out.push(m[1]);
+    }
+    onList(out);
+  });
+}
+var posterUrlMap=null;
+function posterCacheFile(){ var f=appFolder(); return f? f+"\\images\\poster_urls.txt" : ""; }
+function loadPosterUrls(){
+  posterUrlMap={};
+  var p=posterCacheFile();
+  if(!p) return;
+  try{
+    var fso=fsoObj();
+    if(fso.FileExists(p)){
+      var f=fso.OpenTextFile(p,1), s=f.ReadAll(); f.Close();
+      var lines=s.split("\n"), i, k;
+      for(i=0;i<lines.length;i++){
+        k=lines[i].split("\t");
+        if(k.length>1){
+          var nm=k[0].replace(/^\s+|\s+$/g,""), ur=k[1].replace(/^\s+|\s+$/g,"");
+          if(nm&&ur) posterUrlMap[nm]=ur;
+        }
+      }
+    }
+  }catch(e){}
+}
+function savePosterUrl(name,url){
+  if(!posterUrlMap) loadPosterUrls();
+  if(posterUrlMap[name]) return;
+  posterUrlMap[name]=url;
+  var p=posterCacheFile();
+  if(!p) return;
+  try{
+    var fso=fsoObj(), dir=appFolder()+"\\images";
+    if(!fso.FolderExists(dir)) fso.CreateFolder(dir);
+    var f=fso.CreateTextFile(p,true);
+    f.Write(name+"\t"+url+"\r\n");
+    f.Close();
+  }catch(e){}
+}
+function posterSetSrc(url,name){
+  var img=document.getElementById("posterImg");
+  if(!img) return;
+  img.style.display="block";
+  try{ img.setAttribute("data-name",name||""); }catch(e){}
+  img.src=url;
+}
+/* 异步回调可能晚于用户切换：名字已变就丢弃结果，避免旧图覆盖新图 */
+function posterIsCurrent(name){
+  return posterKey===name;
+}
+/* 切换节日时立刻抹掉上一张图，灰底占位，不让旧图滞留 */
+function posterClearIfChanged(name){
+  var img=document.getElementById("posterImg");
+  if(!img) return;
+  var cur="";
+  try{ cur=img.getAttribute("data-name")||""; }catch(e){}
+  if(cur===name) return;
+  try{ img.onerror=null; img.onload=null; }catch(e1){}
+  /* removeAttribute 与 src="" 都做一遍，确保旧图真的从渲染中撤掉 */
+  try{ img.removeAttribute("src"); }catch(e2){}
+  try{ img.src=""; }catch(e3){}
+  img.style.display="none";
+  try{ img.setAttribute("data-name",name||""); }catch(e3){}
+}
+function posterEnsureImage(name,pic){
+  if(!name) return;
+  posterClearIfChanged(name);
+  /* 1) 本地图片优先：节日名 或 pic 指定的文件名 */
+  var ext=posterLocalExt(name);
+  if(ext){ posterSetSrc(posterRelOf(name,ext),name); return; }
+  var pk=posterPicKind(pic);
+  if(pk.kind==="kw" && pk.val){
+    var e2=posterLocalExt(pk.val);
+    if(e2){ posterSetSrc(posterRelOf(pk.val,e2),name); return; }
+  }
+  /* 2) pic 直接给了图片网址 -> 不搜索 */
+  if(pk.kind==="url"){ posterSetSrc(pk.val,name); return; }
+  /* 3) 已缓存的搜索结果 */
+  if(!posterUrlMap) loadPosterUrls();
+  var cacheKey=posterSafe(pk.kind==="kw"?pk.val:name);
+  if(posterUrlMap[cacheKey]){ posterSetSrc(posterUrlMap[cacheKey],name); return; }
+  if(posterBusy) return;            /* 正在下载其它节日，本次放弃 */
+  /* 4) 联网搜索，关键词优先用 pic */
+  var kw=(pk.kind==="kw"&&pk.val)?pk.val:name;
+  posterBusy=1;
+  defer(function(){
+    baiduImages(kw,function(list){
+      posterBusy=0;
+      if(!posterIsCurrent(name)) return;
+      if(list.length){ posterPick(name,cacheKey,list,0); return; }
+      bingImages(kw,function(l2){
+        posterBusy=0;
+        if(posterIsCurrent(name) && l2.length) posterPick(name,cacheKey,l2,0);
+      });
+    });
+  }, 500);
+}
+function posterPick(name,cacheKey,list,i){
+  if(i>=list.length) return;
+  if(!posterIsCurrent(name)) return;
+  var img=document.getElementById("posterImg");
+  if(!img) return;
+  var url=list[i];
+  img.onerror=function(){ if(posterIsCurrent(name)) posterPick(name,cacheKey,list,i+1); };
+  img.onload=function(){ img.onerror=null; };
+  img.style.display="block";
+  try{ img.setAttribute("data-name",name); }catch(e){}
+  img.src=url;
+  if(i===0) savePosterUrl(cacheKey,url);
+}
+function updatePoster(y,m,d,lunar){
+  var p=document.getElementById("poster");
+  if(!p) return;
+  if(inMonthView){ p.style.display="none"; return; }
+  if(posterKey && !posterDetail){
+    var g=posterGrad(posterKey);
+    try{
+      document.getElementById("pgStop1").setAttribute("stop-color",g[0]);
+      document.getElementById("pgStop2").setAttribute("stop-color",g[1]);
+    }catch(e){}
+    document.getElementById("posterName").innerHTML=posterKey;
+    document.getElementById("posterDate").innerHTML=y+"年"+m+"月"+d+"日 · 农历"
+      +(lunar.isLeap?"闰":"")+monthName(lunar.month)+cDay(lunar.day);
+    p.style.display="block";
+    document.getElementById("dayView").style.display="none";
+    posterEnsureImage(posterKey,posterPicOf(posterKey));
+  }else{
+    p.style.display="none";
+    document.getElementById("dayView").style.display="table";
+    posterClearIfChanged("");   /* 非节日日期：抹掉残留海报，避免下次进入时闪现旧图 */
+  }
+}
+function bindPoster(){
+  document.getElementById("poster").onclick=function(){
+    posterDetail=true;
+    var y=cur.getFullYear(), m=cur.getMonth()+1, d=cur.getDate();
+    updatePoster(y,m,d,toLunar(y,m,d));
+  };
+  document.getElementById("festLine").onclick=function(){
+    var y=cur.getFullYear(), m=cur.getMonth()+1, d=cur.getDate();
+    var lu=toLunar(y,m,d);
+    /* 弹窗：当天有自定义节日时再次滚动显示 */
+    var mf=myFind(y,m,d,lu), i, wt=[];
+    for(i=0;i<mf.length;i++){ if(mf[i].text) wt.push(mf[i].name+"　"+mf[i].text); }
+    if(wt.length){ showMarquee(escHtml(wt.join("　　")), renderedYMD+"|"+mf[0].name); }
+    if(posterKey && !posterDetail){
+      posterDetail=false;
+      updatePoster(y,m,d,lu);
+    }
+  };
+}
+
+function renderDay(){
+  var y=cur.getFullYear(), m=cur.getMonth()+1, d=cur.getDate();
+  renderedYMD=y*10000+m*100+d;
+  var lunar=toLunar(y,m,d);
+  var p=pillars(y,m,d);
+  var term=termIdxOfDay(y,m,d);
+  var f=festivals(y,m,d,lunar,term);
+  var dow=cur.getDay();
+  var dayClass="dayNormal";
+  if(f.length>0) dayClass="dayFest";
+  else if(dow==0||dow==6) dayClass="dayWeekend";
+  document.getElementById("sYearMonth").innerHTML=y+"年"+m+"月　星期"+"日一二三四五六".charAt(dow);
+  var sd=document.getElementById("sDay");
+  sd.className="bigday "+dayClass;
+  sd.innerHTML=d;
+  document.getElementById("lunarLine").innerHTML="农历 "+(lunar.isLeap?"闰":"")+monthName(lunar.month)+cDay(lunar.day);
+  document.getElementById("gzLine").innerHTML=p.yGan+p.yZhi+"("+p.yAnimal+")年　"+p.mGan+p.mZhi+"月　"+p.dGan+p.dZhi+"日";
+  var banner="&nbsp;";
+  posterKey = posterPickName(f);
+  posterDetail = false;
+  if(f.length){
+    banner="今日 "+f.join("　");
+    if(posterKey) banner+="<span class='more'>▸ 查看大图</span>";
+  }
+  document.getElementById("festLine").className=(f.length&&posterKey)?"banner has":"banner";
+  /* 没有节日时不保留空行，否则会白占约 23px，让「干支↔宜忌」之间出现空洞 */
+  document.getElementById("festLine").style.display=(f.length)?"block":"none";
+  document.getElementById("festLine").innerHTML=banner;
+  var off=(p.dBranchIdx-p.mBranchIdx+12)%12;
+  document.getElementById("yiList").innerHTML=OfficerYi[off].join("　");
+  document.getElementById("jiList").innerHTML=OfficerJi[off].join("　");
+  var chongB=(p.dBranchIdx+6)%12;
+  document.getElementById("chongLine").innerHTML="<b>冲"+Animals[chongB]+"</b>("+Zhi[chongB]+")　"+shaOf(p.dBranchIdx)+"　·　值神："+Officer[off]+"日";
+  var mp=moonPhase(lunar.day);
+  document.getElementById("moonLine").innerHTML=mp[0]+"月相 "+mp[1];
+  renderWeatherLine(y,m,d);
+  var sv=sunTime(y,m,d,cfg.lat,cfg.lng,true), ss=sunTime(y,m,d,cfg.lat,cfg.lng,false);
+  var sunEl=document.getElementById("sunLine");
+  sunEl.innerHTML=ICON_SRISE+"日出 "+sv+"　"+ICON_SSET+"日落 "+ss;
+  sunEl.title="按城市坐标 "+cfg.lat.toFixed(2)+"°N, "+cfg.lng.toFixed(2)+"°E 天文计算（NOAA 算法），与官方数据相差不超过 1~2 分钟；不同网站因取用观测点不同可能有几分钟出入。";
+  updatePoster(y,m,d,lunar);
+  /* 自定义节日滚动大字（每天只弹一次；点击可提前关闭） */
+  var mf=myFind(y,m,d,lunar);
+  if(mf.length){
+    var withText=[], i;
+    for(i=0;i<mf.length;i++){ if(mf[i].text) withText.push(mf[i].name+"　"+mf[i].text); }
+    var mk=renderedYMD+"|"+mf[0].name;
+    if(withText.length && toastKey!==mk){
+      defer(function(){ showMarquee(escHtml(withText.join("　　")), mk); }, 260);
+    }
+  }
+}
+function escHtml(s){
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+function renderWeatherLine(y,m,d){
+  var el=document.getElementById("weatherLine");
+  var idx=currentForecastIndex();
+  var fc=(idx>=0&&lastWeather&&lastWeather.forecast)?lastWeather.forecast[idx]:null;
+  var lv=live;
+  if(fc||lv){
+    /* 天气状况以中国气象局(sojson)为准：wttr.in 用的是自有测站，偶发"附近有雨"就报毛毛雨，
+       与国内官方口径不符。数值(温度/体感/风/气压/能见度)仍取 wttr.in 的实况，更及时。 */
+    var cmaType=(fc&&fc.type)?fc.type:"";
+    var wrType=(lv&&lv.type)?lv.type:"";
+    var type=cmaType||wrType;
+    var iconT=cmaType||wrType||"阴";
+    var main="";
+    if(lv&&lv.temp!=="") main=lv.temp+"°"+((lv.feels!=="")?(" 体感"+lv.feels+"°"):"");
+    else if(fc) main=fc.low+"~"+fc.high+"°";
+    var tip=[];
+    if(fc) tip.push("气象局 "+fc.low+"~"+fc.high+"° "+fc.type);
+    if(lv){ tip.push("实况 "+lv.temp+"°"); if(lv.pres) tip.push("气压 "+lv.pres+"hPa"); if(lv.vis) tip.push("能见度 "+lv.vis+"km"); if(lv.wind) tip.push(lv.wind+" "+lv.windKmh+"km/h"); }
+    if(cmaType&&wrType&&cmaType!==wrType) tip.push("wttr.in 测站为"+wrType+"（"+(lv&&lv.desc?lv.desc:"")+"），与气象局口径可能有差异");
+    var tpTxt=typhoonText();
+    if(tpTxt) tip.push("⚠ 台风： "+tpTxt+(TYPHOON_AT?"（"+TYPHOON_AT+" 更新）":""));
+    if(liveAt) tip.push("更新 "+liveAt);
+    var wtxt=weatherIcon(iconT)+cfg.city+" "+type+"　"+main;
+    if(tpTxt) wtxt=weatherIcon("台风")+cfg.city+" <span class='tyw'>⚠ "+tpTxt+"</span>";
+    el.innerHTML=wtxt;
+    el.title=tip.join(" · ");
+    if(idx>=0) renderForecast5(idx);
+    renderAirLine();
+    return;
+  }
+  if(weatherFailed){
+    el.innerHTML=weatherIcon("☁")+cfg.city+" 天气获取失败（请检查网络）";
+  }else{
+    el.innerHTML=weatherIcon("☁")+cfg.city+" 天气获取中…";
+  }
+  var el5=document.getElementById("fc5");
+  if(el5) el5.innerHTML="";
+  var el6=document.getElementById("airLine");
+  if(el6) el6.innerHTML="&nbsp;";
+}
+function weekLabelOf(ymd){
+  var p=String(ymd).split("-");
+  if(p.length<3) return "";
+  var w=new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)).getDay();
+  return "周"+"日一二三四五六".charAt(w);
+}
+function renderForecast5(idx){
+  var el=document.getElementById("fc5");
+  if(!el) return;
+  var fc=lastWeather.forecast;
+  var n=fc.length-idx; if(n>5) n=5;
+  if(n<=0){ el.innerHTML=""; return; }
+  var html="", i;
+  for(i=0;i<n;i++){
+    var f=fc[idx+i];
+    var lbl=(i==0)?"今天":((i==1)?"明天":weekLabelOf(f.ymd));
+    var a=aqiInfo(f.aqi);
+    var aq=(a&&i==0)?"":"";
+    var aqHtml=(a)?"<span class='aqism' style='color:"+a.c+";' title='当日预报AQI "+f.aqi+" "+a.n+"（非实时）'>"+f.aqi+"</span>":"";
+    html+="<div class='cell'>"
+        +"<div class='d'>"+lbl+aqHtml+"</div>"
+        +"<div class='ic'>"+weatherIcon(f.type)+"</div>"
+        +"<div class='t'>"+f.low+"~"+f.high+"°</div>"
+        +"</div>";
+  }
+  el.innerHTML=html;
+}
+
+function defer(fn, ms){ try{ setTimeout(fn, ms||300); }catch(e){ try{ fn(); }catch(e2){} } }
+function numOnly(s){ var m=/(-?[0-9]+(?:\.[0-9]+)?)/.exec(String(s)); return m?m[1]:""; }
+function parseWeatherText(t){
+  var res={wendu:"",shidu:"",pm25:"",pm10:"",quality:"",obsTime:"",aqi:-1,forecast:[]}, m, i;
+  m=/"time"\s*:\s*"([^"]*)"/.exec(t);   if(m) res.obsTime=m[1];
+  /* 顶层官方 AQI：出现在 "sunrise","sunset" 之后，紧跟 sunset，区别于 forecast[].aqi */
+  m=/"sunset"\s*:\s*"[^"]*"\s*,\s*"aqi"\s*:\s*(\d+)/.exec(t); if(m) res.aqi=parseInt(m[1],10);
+  m=/"wendu"\s*:\s*"([^"]*)"/.exec(t);   if(m) res.wendu=m[1];
+  m=/"shidu"\s*:\s*"([^"]*)"/.exec(t);   if(m) res.shidu=m[1];
+  m=/"pm25"\s*:\s*(-?[0-9.]+)/.exec(t);  if(m) res.pm25=m[1];
+  m=/"pm10"\s*:\s*(-?[0-9.]+)/.exec(t);  if(m) res.pm10=m[1];
+  m=/"quality"\s*:\s*"([^"]*)"/.exec(t); if(m) res.quality=m[1];
+  var fm=/"forecast"\s*:\s*\[([\s\S]*?)\]\s*,\s*"yesterday"/.exec(t);
+  if(!fm) fm=/"forecast"\s*:\s*\[([\s\S]*?)\]/.exec(t);
+  if(fm){
+    var chunks=fm[1].split("},{");
+    for(i=0;i<chunks.length;i++){
+      var c=chunks[i];
+      var y=/"ymd"\s*:\s*"([^"]*)"/.exec(c);
+      if(!y) continue;
+      var ty=/"type"\s*:\s*"([^"]*)"/.exec(c);
+      var lo=/"low"\s*:\s*"([^"]*)"/.exec(c);
+      var hi=/"high"\s*:\s*"([^"]*)"/.exec(c);
+      var aq=/"aqi"\s*:\s*(-?[0-9]+)/.exec(c);
+      if(ty&&lo&&hi){
+        res.forecast.push({ymd:y[1], type:ty[1], low:numOnly(lo[1]), high:numOnly(hi[1]),
+                           aqi:aq?parseInt(aq[1],10):-1});
+      }
+    }
+  }
+  return res.forecast.length?res:null;
+}
+/* 国标 HJ 633-2012：IAQI 与污染物浓度分段对应，格式 [浓度上限, IAQI] */
+var PM25_BP=[[0,0],[35,50],[75,100],[115,150],[150,200],[250,300],[350,400],[500,500]];
+var PM10_BP =[[0,0],[50,50],[150,100],[250,150],[350,200],[420,300],[500,400],[600,500]];
+function iaqiOf(c, bp){
+  c=parseFloat(c);
+  if(isNaN(c)||c<0) return -1;
+  if(c>bp[bp.length-1][0]) c=bp[bp.length-1][0];
+  for(var i=1;i<bp.length;i++){
+    if(c<=bp[i][0]){
+      return Math.round(bp[i-1][1]+(c-bp[i-1][0])/(bp[i][0]-bp[i-1][0])*(bp[i][1]-bp[i-1][1]));
+    }
+  }
+  return bp[bp.length-1][1];
+}
+/* 实时 AQI：取 PM2.5 与 PM10 的较大 IAQI（国标取最大者） */
+function calcRealtimeAQI(){
+  if(!lastWeather) return -1;
+  var a=iaqiOf(lastWeather.pm25,PM25_BP), b=iaqiOf(lastWeather.pm10,PM10_BP);
+  if(a>b) return a;
+  if(b>a) return b;
+  return a;
+}
+function aqiInfo(v){
+  if(v==null||isNaN(v)||v<0) return null;
+  if(v<=50)  return {n:"优",c:"#1b5e20",bg:"#e8f5e9"};
+  if(v<=100) return {n:"良",c:"#827717",bg:"#f9fbe7"};
+  if(v<=150) return {n:"轻度污染",c:"#e65100",bg:"#fff3e0"};
+  if(v<=200) return {n:"中度污染",c:"#c62828",bg:"#ffebee"};
+  if(v<=300) return {n:"重度污染",c:"#6a1b9a",bg:"#f3e5f5"};
+  return {n:"严重污染",c:"#7b1fa2",bg:"#ede7f6"};
+}
+function currentForecastIndex(){
+  if(!lastWeather||!lastWeather.forecast) return -1;
+  var y=cur.getFullYear(), m=cur.getMonth()+1, d=cur.getDate();
+  var ds=y+"-"+(m<10?"0"+m:m)+"-"+(d<10?"0"+d:d);
+  for(var i=0;i<lastWeather.forecast.length;i++){
+    if(lastWeather.forecast[i].ymd==ds) return i;
+  }
+  return -1;
+}
+function renderAirLine(){
+  var el=document.getElementById("airLine");
+  if(!el) return;
+  var parts=[], tip=[];
+  var lv=live;
+  if(lv){
+    if(lv.hum!=="") parts.push("湿度 <b>"+lv.hum+"%</b>");
+    if(lv.wind) parts.push(lv.wind+"风 "+(lv.windKmh||"")+"km/h");
+    /* 气压：中国气象局接口不提供，只能取 wttr.in 实况（悬停里已注明来源） */
+    if(lv.pres) parts.push("气压 <b>"+lv.pres+"</b>");
+  }else if(lastWeather && lastWeather.shidu){
+    parts.push("湿度 <b>"+lastWeather.shidu+"</b>");
+  }
+/* 优先用中国气象局官方 AQI（含 O3/NO2 等全部污染物）；
+   官方值缺失时才退回用 PM2.5/PM10 按国标 HJ633 自行换算。 */
+var offAqi=(lastWeather&&lastWeather.aqi>=0)?lastWeather.aqi:-1;
+var rt=(offAqi>=0)?offAqi:calcRealtimeAQI();
+if(rt>=0){
+    var a=aqiInfo(rt);
+    if(a) parts.push("<span class='aqi' style='color:"+a.c+";background:"+a.bg+"'>空气 "+rt+" "+a.n+"</span>");
+    tip.push(offAqi>=0?"AQI 为中国气象局官方发布值（含全部污染物）":"AQI 为国标HJ633按PM2.5/PM10换算（官方值缺失时的近似）");
+    if(lastWeather.pm25) tip.push("PM2.5 "+lastWeather.pm25+" μg/m³");
+    if(lastWeather.pm10) tip.push("PM10 "+lastWeather.pm10+" μg/m³");
+    if(lastWeather.quality) tip.push("站点评级 "+lastWeather.quality);
+    if(lastWeather.obsTime) tip.push("污染物观测 "+lastWeather.obsTime);
+  }else{
+    var idx=currentForecastIndex();
+    if(lastWeather&&lastWeather.forecast&&idx>=0){
+      var f=lastWeather.forecast[idx], a2=aqiInfo(f.aqi);
+      if(a2) parts.push("<span class='aqi' style='color:"+a2.c+";background:"+a2.bg+"'>日AQI "+f.aqi+" "+a2.n+"</span>");
+      tip.push("AQI 为当日预报值（非实时）");
+    }
+  }
+  if(lv&&lv.pres) tip.push("气压 "+lv.pres+" hPa");
+  if(lv&&lv.vis) tip.push("能见度 "+lv.vis+" km");
+  if(liveAt) tip.push("天气更新 "+liveAt);
+  el.innerHTML=parts.length?parts.join("　"):"&nbsp;";
+  el.title=tip.join(" · ");
+}
+
+function weatherRetryLater(){
+  if(weatherRetry>=2) return;
+  weatherRetry++;
+  defer(function(){ fetchWeather(true); }, 2500);
+}
+function fetchWeather(force){
+  var now=new Date().getTime();
+  if(!force && now-lastFetchTs<30*60*1000) return;
+  lastFetchTs=now;
+  var url="http://t.weather.sojson.com/api/weather/city/"+cfg.code;
+  var xhr=null;
+  try{ xhr=new ActiveXObject("MSXML2.ServerXMLHTTP.6.0"); }catch(e){
+    try{ xhr=new ActiveXObject("Msxml2.XMLHTTP.6.0"); }catch(e2){
+      try{ xhr=new XMLHttpRequest(); }catch(e3){ xhr=null; }
+    }
+  }
+  if(!xhr){ weatherFailed=true; weatherRetryLater(); return; }
+  try{
+    try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e5){}
+    xhr.open("GET",url,true);
+    try{ xhr.setRequestHeader("User-Agent","Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1)"); }catch(e4){}
+    xhr.onreadystatechange=function(){
+      if(xhr.readyState==4){
+        if(xhr.status==200){
+          try{
+            var w=parseWeatherText(xhr.responseText);
+            if(w){ lastWeather=w; weatherFailed=false; weatherRetry=0; }
+            else { weatherFailed=true; weatherRetryLater(); }
+          }catch(ex){ weatherFailed=true; weatherRetryLater(); }
+        }else{ weatherFailed=true; weatherRetryLater(); }
+        if(!inMonthView) renderWeatherLine(cur.getFullYear(),cur.getMonth()+1,cur.getDate());
+      }
+    };
+    xhr.send(null);
+  }catch(e){ weatherFailed=true; weatherRetryLater(); }
+}
+
+var WEEK_CN=["日","一","二","三","四","五","六"];
+function renderCalHead(ws){
+  var tr=document.getElementById("calHead");
+  if(!tr) return;
+  /* IE 下不能给 tr 赋 innerHTML（抛"该操作的目标对象无效"），必须逐格删建 */
+  try{ while(tr.cells.length>0){ tr.deleteCell(0); } }catch(e){}
+  var i, dow, th;
+  for(i=0;i<7;i++){
+    dow=(ws+i)%7;                             /* 0=周日 … 6=周六 */
+    th=document.createElement("th");
+    th.innerHTML=WEEK_CN[dow];
+    if(dow===0 || dow===6){ th.style.color="#c22012"; }
+    tr.appendChild(th);
+  }
+}
+function renderMonth(){
+  var y=viewY, m=viewM;
+  document.getElementById("mTitle").innerHTML=y+"年 "+m+"月"
+    +"<span class='sync'>"+(holHasYear(y)?"调休已同步":"调休待公布")+"</span>";
+  var first=new Date(y,m-1,1);
+  var ws=(cfg.weekStart===0)?0:1;        /* 0=周日开头 1=周一开头 */
+  renderCalHead(ws);
+  var startCol=(first.getDay()-ws+7)%7;
+  var days=solarDays(y,m);
+  var t1n=(m-1)*2, t2n=t1n+1;
+  var t1d=sTermDay(y,t1n), t2d=sTermDay(y,t2n);
+  var n=new Date();
+  var isThis=(n.getFullYear()==y && n.getMonth()+1==m);
+  var tb=document.getElementById("calBody");
+  var r, c, dnum=1;
+  /* 注意：本环境下给 tbody 赋 innerHTML 会抛"该操作的目标对象无效"，
+     必须用 insertRow/insertCell 构建，单元格内部再用 innerHTML 是正常的。 */
+  while(tb.rows.length>0){ tb.deleteRow(0); }
+  for(r=0;r<6;r++){
+    var tr=tb.insertRow();
+    for(c=0;c<7;c++){
+      var td=tr.insertCell();
+      var idx=r*7+c;
+      if(idx<startCol || dnum>days){ td.className="empty"; continue; }
+      var dd=dnum;
+      var lunar=toLunar(y,m,dd);
+      var adj=holDay(y,m,dd);                 /* 国务院调休安排 */
+      var cls="", sub="";
+      /* 副标题优先级：节气 > 节日 > 调休标记 > 农历 */
+      if(dd==t1d){ sub=termNames[t1n]; cls="term"; }
+      else if(dd==t2d){ sub=termNames[t2n]; cls="term"; }
+      else{
+        var f=festivals(y,m,dd,lunar,-1);
+        if(f.length){ sub=f[0]; cls="fest"; }
+      }
+      if(!sub && adj && adj.type=="work"){
+        sub="<span class='ban'>班</span>";
+      }else if(!sub && adj && adj.type=="off"){
+        var nm=adj.name;
+        if(nm && !/^初[一二三四五六七八九十]$/.test(nm) && nm!="除夕"){ sub=nm; cls="fest"; }
+        else sub="<span class='off'>休</span>";
+      }
+      if(!sub){
+        if(lunar.day==1){ sub=(lunar.isLeap?"闰":"")+monthName(lunar.month); cls="lunar1"; }
+        else sub=cDay(lunar.day);
+      }
+      var isToday=(isThis && dd==n.getDate());
+      var sdCls="", tdCls="";
+      if(isToday) tdCls="today";
+      if(adj && adj.type=="work"){ tdCls=(tdCls?tdCls+" ":"")+"workday"; sdCls=" sdWork"; }
+      else if(adj && adj.type=="off"){ tdCls=(tdCls?tdCls+" ":"")+"restday"; sdCls=" sdRest"; }
+      else if(!isToday){
+        if(cls=="fest"||cls=="term") sdCls=" sdFest";
+        else if((ws+c)%7===0 || (ws+c)%7===6) sdCls=" sdWeekend";
+      }
+      td.className=tdCls;
+      td.setAttribute("data-d", dd);
+      td.innerHTML="<div class='sd"+sdCls+"'>"+dd+"</div><div class='ld "+cls+"'>"+sub+"</div>";
+      dnum++;
+    }
+    if(dnum>days) break;
+  }
+}
+
+function showView(month){
+  inMonthView=month;
+  document.getElementById("dayView").style.display=month?"none":"table";
+  document.getElementById("monthView").style.display=month?"block":"none";
+  document.getElementById("prevLbl").innerHTML=month?"上一月":"前一天";
+  document.getElementById("nextLbl").innerHTML=month?"下一月":"后一天";
+  document.getElementById("toggleBtn").innerHTML=month?"返回黄历":"万年历";
+  if(month){ viewY=cur.getFullYear(); viewM=cur.getMonth()+1; renderMonth(); }
+  else{ renderDay(); }
+}
+
+function shiftDay(delta){
+  var nd=new Date(cur.getFullYear(),cur.getMonth(),cur.getDate()+delta);
+  if(nd<new Date(1900,1,1) || nd>new Date(2100,11,31)) return;
+  cur=nd;
+  renderDay();
+}
+function shiftMonth(delta){
+  var m=viewM+delta, y=viewY;
+  while(m>12){ m-=12; y++; }
+  while(m<1){ m+=12; y--; }
+  if(y<1900 || y>2100) return;
+  viewY=y; viewM=m; renderMonth();
+}
+function goToday(){ cur=new Date(); if(inMonthView){ viewY=cur.getFullYear(); viewM=cur.getMonth()+1; renderMonth(); } else { renderDay(); } }
+
+/* ---------- 拖动 + 自动隐藏 ---------- */
+var dragging=false, offX=0, offY=0;
+var navTimer=0, topTimer=0;
+function hideBars(){
+  var ft=document.getElementById("floatTop"), nv=document.getElementById("nav");
+  if(ft) ft.style.display="none";
+  if(nv) nv.style.display="none";
+}
+function clearBarTimers(){
+  try{ if(navTimer){ clearTimeout(navTimer); navTimer=0; } }catch(e){}
+  try{ if(topTimer){ clearTimeout(topTimer); topTimer=0; } }catch(e){}
+}
+/* 兜底：即使鼠标不再移动，也强制在若干毫秒后收起，避免停留不消失 */
+function armBarTimers(){
+  clearBarTimers();
+  try{
+    navTimer=setTimeout(function(){
+      var nv=document.getElementById("nav");
+      if(nv) nv.style.display="none";
+      navTimer=0;
+    },2600);
+    topTimer=setTimeout(function(){
+      var ft=document.getElementById("floatTop");
+      if(ft) ft.style.display="none";
+      topTimer=0;
+    },2600);
+  }catch(e){}
+}
+function updateBars(){
+  var e=window.event;
+  if(!e) return;
+  var y=e.clientY||0;
+  var h=document.documentElement.clientHeight||document.body.clientHeight||660;
+  var ft=document.getElementById("floatTop"), nv=document.getElementById("nav");
+  var wantTop=(y>0 && y<32);
+  var wantNav=(y>0 && y>h-50);
+  if(ft) ft.style.display=wantTop?"block":"none";
+  if(nv) nv.style.display=wantNav?"block":"none";
+  if(wantTop||wantNav) armBarTimers(); else clearBarTimers();
+}
+function bindDrag(){
+  document.onmousedown=function(){
+    var e=window.event, t=e.srcElement;
+    if(!t) return;
+    if(t.tagName=="BUTTON"||t.tagName=="INPUT"||t.tagName=="TD"||t.tagName=="A") return;
+    var p=t;
+    while(p){
+      if(p.id=="settings") return;
+      p=p.parentNode;
+    }
+    dragging=true;
+    offX=e.screenX-window.screenLeft;
+    offY=e.screenY-window.screenTop;
+  };
+  document.onmousemove=function(){
+    var e=window.event;
+    if(dragging){
+      window.moveTo(e.screenX-offX, e.screenY-offY);
+    }
+    updateBars();
+  };
+  document.onmouseup=function(){ dragging=false; };
+  /* 指针离开窗口：立即收起（relatedTarget 为空表示真的离开了文档） */
+  document.onmouseleave=function(){ dragging=false; hideBars(); clearBarTimers(); };
+  document.onmouseout=function(){
+    var e=window.event;
+    if(!e.relatedTarget){ dragging=false; hideBars(); clearBarTimers(); }
+  };
+  window.onblur=function(){ hideBars(); clearBarTimers(); };
+}
+
+function tick(){
+  /* 跨天自动翻页 + 天气定时刷新 + 调休安排每日复查 */
+  var n=new Date();
+  var key=todayKeyOf(n);
+  if(!lastTodayKey) lastTodayKey=key;
+  if(key!==lastTodayKey){
+    /* 真实日期已变。若用户原本停在"今天"，自动跟进新的一天；否则保持所看日期不动，只刷新标记 */
+    var oldY=Math.floor(lastTodayKey/10000), oldM=Math.floor(lastTodayKey/100)%100;
+    if(inMonthView){
+      if(viewY===oldY && viewM===oldM){ viewY=n.getFullYear(); viewM=n.getMonth()+1; }
+      renderMonth();
+    }else{
+      if(isKeyOf(lastTodayKey, cur)){ cur=new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
+      renderedYMD=null;
+      renderDay();
+    }
+    lastTodayKey=key;
+    fetchWeather(true);
+    fetchLive();
+  }else if(!inMonthView && isToday(cur.getFullYear(),cur.getMonth()+1,cur.getDate()) && key!=renderedYMD){
+    renderDay();
+  }
+  fetchWeather(false);
+  if(holNeedSync()) syncHolidays(false, function(st,updated){ if(updated) redrawCurrent(); });
+  if(schoolNeedSync()) syncSchool(false, function(){ redrawCurrent(); });
+  /* 实况每 10 分钟刷新一次（原 30 分钟，过于滞后） */
+  var nowMs=n.getTime();
+  if(nowMs-lastLiveTs>=10*60*1000){
+    lastLiveTs=nowMs;
+    fetchLive();
+    fetchTyphoon();
+  }
+}
+var lastLiveTs=0;
+function redrawCurrent(){
+  try{
+    if(inMonthView) renderMonth(); else renderDay();
+  }catch(e){}
+}
+
+var mfMsgTimer=0;
+function mfMsg(txt, ok){
+  var el=document.getElementById("mfMsg");
+  if(!el) return;
+  el.innerHTML=txt?("<span class='"+(ok?"ok":"err")+"'>"+escHtml(txt)+"</span>"):"";
+  try{ if(mfMsgTimer){ clearTimeout(mfMsgTimer); mfMsgTimer=0; } }catch(e){}
+  if(txt){
+    try{ mfMsgTimer=setTimeout(function(){ var e2=document.getElementById("mfMsg"); if(e2) e2.innerHTML=""; }, 5000); }
+    catch(e2){}
+  }
+}
+function mfSetBtn(editing){
+  var b=document.getElementById("mfAdd"), c=document.getElementById("mfCancel");
+  if(b) b.innerHTML=editing?"保存修改":"添加";
+  if(c) c.style.display=editing?"inline-block":"none";
+}
+function mfStartEdit(idx){
+  var it=MYF[idx];
+  if(!it) return;
+  mfEditIdx=idx;
+  var nEl=document.getElementById("mfName"), dEl=document.getElementById("mfDate"),
+      tEl=document.getElementById("mfText"), yEl=document.getElementById("mfType"),
+      pEl=document.getElementById("mfPic");
+  if(nEl) nEl.value=it.name;
+  if(yEl) yEl.value=it.type;
+  if(dEl) dEl.value=(it.type=="L")?it.date:it.date;
+  if(tEl) tEl.value=it.text||"";
+  if(pEl) pEl.value=it.pic||"";
+  mfSetBtn(true);
+  mfMsg("正在修改「"+it.name+"」，改完点「保存修改」", true);
+  try{ nEl.focus(); }catch(e){}
+}
+function mfCancelEdit(){
+  mfEditIdx=-1;
+  var nEl=document.getElementById("mfName"), dEl=document.getElementById("mfDate"),
+      tEl=document.getElementById("mfText"), pEl=document.getElementById("mfPic");
+  if(nEl) nEl.value=""; if(dEl) dEl.value=""; if(tEl) tEl.value=""; if(pEl) pEl.value="";
+  mfSetBtn(false);
+  mfMsg("");
+}
+function mfAddAction(){
+  var nEl=document.getElementById("mfName"), dEl=document.getElementById("mfDate"),
+      tEl=document.getElementById("mfText"), yEl=document.getElementById("mfType"),
+      pEl=document.getElementById("mfPic");
+  if(!nEl||!dEl||!yEl) return;
+  var name=String(nEl.value||"").replace(/^\s+|\s+$/g,"");
+  if(!name){ mfMsg("请先填写名称"); try{ nEl.focus(); }catch(e1){} return; }
+  var type=String(yEl.value||"Y");
+  if(type!="Y" && type!="L" && type!="O") type="Y";
+  var dt=myNormalizeDate(dEl.value, type);
+  if(!dt){
+    mfMsg(type=="O"?"日期格式应为 2027-03-14":(type=="L"?"农历日期格式应为 8-15":"公历日期格式应为 03-14"));
+    try{ dEl.focus(); }catch(e2){}
+    return;
+  }
+  var i, it;
+  for(i=0;i<MYF.length;i++){
+    if(i===mfEditIdx) continue;
+    it=MYF[i];
+    if(it.type==type && it.name==name && it.date==dt){ mfMsg("「"+name+"」"+myTypeLabel(type)+" "+dt+" 已存在"); return; }
+  }
+  var rec={type:type, name:name, date:dt, text:String((tEl&&tEl.value)||"").replace(/^\s+|\s+$/g,""),
+            pic:String((pEl&&pEl.value)||"").replace(/^\s+|\s+$/g,"")};
+  var editing=mfEditIdx>=0;
+  if(editing) MYF[mfEditIdx]=rec; else MYF.push(rec);
+  mfEditIdx=-1;
+  myRebuildMap();
+  var saved=mySave();
+  renderMfList(); redrawCurrent();
+  nEl.value=""; dEl.value=""; if(tEl) tEl.value=""; if(pEl) pEl.value="";
+  mfSetBtn(false);
+  mfMsg(saved
+      ?(editing?("已保存「"+name+"」的修改"):("已添加「"+name+"」"+myDesc(rec)))
+      :(editing?("已修改，但写入 myfest.txt 失败，重启后会恢复"):("已添加，但写入 myfest.txt 失败，重启后会丢失")),
+      saved);
+  try{ nEl.focus(); }catch(e3){}
+}
+function bindSettingsUI(){
+  var addBtn=document.getElementById("mfAdd");
+  if(addBtn) addBtn.onclick=mfAddAction;
+  var kf=function(e){
+    var k=e.keyCode||e.which;
+    if(k==13){ try{ e.returnValue=false; }catch(e4){} mfAddAction(); }
+  };
+  var ids=["mfName","mfDate","mfText","mfPic"];
+  for(var q=0;q<ids.length;q++){
+    var inp=document.getElementById(ids[q]);
+    if(inp) inp.onkeypress=kf;
+  }
+  var canBtn=document.getElementById("mfCancel");
+  if(canBtn) canBtn.onclick=mfCancelEdit;
+  document.getElementById("mfList").onclick=function(e){
+    var t=e.srcElement;
+    if(!t) return;
+    if(t.className=="x"){
+      var idx=parseInt(t.getAttribute("data-i"),10);
+      if(isNaN(idx)) return;
+      if(!confirm("删除「"+MYF[idx].name+"」？")) return;
+      if(mfEditIdx===idx) mfCancelEdit();
+      else if(mfEditIdx>idx) mfEditIdx--;
+      MYF.splice(idx,1);
+      myRebuildMap();
+      var okDel=mySave();
+      renderMfList();
+      redrawCurrent();
+      if(!okDel) mfMsg("已删除，但写入 myfest.txt 失败，重启后会恢复", false);
+      return;
+    }
+    if(t.className=="e"){
+      var ei=parseInt(t.getAttribute("data-i"),10);
+      if(!isNaN(ei)) mfStartEdit(ei);
+      return;
+    }
+    var p=t;
+    while(p && p.id!="mfList"){
+      if(String(p.className||"").indexOf("mfItem")>=0){
+        var ci=parseInt(p.getAttribute("data-e"),10);
+        if(!isNaN(ci)) mfStartEdit(ci);
+        return;
+      }
+      p=p.parentNode;
+    }
+  };
+}
+function renderMfList(){
+  var el=document.getElementById("mfList");
+  if(!el) return;
+  if(!MYF.length){ el.innerHTML="<div class='mfEmpty'>还没有自定义节日，在下面添加吧。</div>"; return; }
+  var html="", i, it;
+  for(i=0;i<MYF.length;i++){
+    it=MYF[i];
+    html+="<div class='mfItem"+(i===mfEditIdx?" editing":"")+"' data-e='"+i+"'>"
+        +"<span class='e' data-i='"+i+"' title='编辑'>✎</span>"
+        +"<span class='x' data-i='"+i+"' title='删除'>✕</span>"
+        +"<b>"+escHtml(it.name)+"</b> <span class='d'>"+myDesc(it)+"</span>"
+        +"<span class='d'> · "+myTypeLabel(it.type)+"</span>"
+        +(it.text?("<div class='t'>"+escHtml(it.text)+"</div>"):"")
+        +(it.pic?("<div class='t' style='color:#2e7d32'>配图："+escHtml(it.pic)+"</div>"):"")
+        +"</div>";
+  }
+  el.innerHTML=html;
+}
+/* ============================================================
+   开机自动启动（写 HKCU Run，无需管理员权限）
+   本程序是 GUI 程序，不能做成 Windows Service（Service 在 Session 0
+   无桌面，无法显示窗口），因此改为登录后自动启动。
+   ============================================================ */
+var RUN_SUB="Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+var RUN_NAME="WinCalendar";
+function shellObj(){ try{ return new ActiveXObject("WScript.Shell"); }catch(e){ return null; } }
+function runRegFull(){ return "HKCU\\"+RUN_SUB+"\\"+RUN_NAME; }
+function autostartCmd(htaPath){
+  var raw="";
+  if(htaPath!=null) raw=String(htaPath);
+  else{
+    try{ raw=String((typeof location!="undefined" && location && location.pathname)||""); }catch(e){ raw=""; }
+  }
+  var hta=raw.replace(/\//g,"\\");
+  if(!/\.hta$/i.test(hta)) return "";
+  var mshta="mshta.exe";
+  try{
+    var s=new ActiveXObject("WScript.Shell");
+    if(s) mshta=s.ExpandEnvironmentStrings("%SystemRoot%\\System32\\mshta.exe");
+  }catch(e){}
+  return '"'+mshta+'" "'+hta+'"';
+}
+function isAutostart(){
+  try{
+    var s=shellObj();
+    if(!s) return false;
+    var v=s.RegRead(runRegFull());
+    return !!(v && String(v).length);
+  }catch(e){ return false; }
+}
+function setAutostart(on){
+  var s=shellObj();
+  if(!s) return false;
+  var p=runRegFull();
+  if(on){
+    var cmd=autostartCmd();
+    if(!cmd) return false;
+    try{ s.RegWrite(p, cmd, "REG_SZ"); return true; }catch(e){ return false; }
+  }
+  if(!isAutostart()) return true;   /* 本来就是关的，无需删除 */
+  try{ s.RegDelete(p); return !isAutostart(); }catch(e2){ return false; }
+}
+/* ============================================================
+   台风信息（中国气象局台风网 typhoon.nmc.cn，免密钥、支持 HTTP）
+   注意：暴雨/高温/雷电等各类气象预警目前没有免密钥的 HTTP 接口，
+   只能覆盖台风。如需其它预警类型，只能后续接入带 key 的商业 API。
+   ============================================================ */
+var TYPHOON_URL="http://typhoon.nmc.cn/weatherservice/typhoon/jsons/list_default";
+var TYPHOONS=[];          /* 活跃台风 [{cn,en,num}] */
+var TYPHOON_AT="";
+var TYPHOON_STATUS={TS:"热带风暴",STS:"强热带风暴",TY:"台风",STY:"强台风",SuperTY:"超强台风",TD:"热带低压"};
+/* 把 JSONP 里的一条数组按顶层逗号切分，正确跳过引号与嵌套括号 */
+function splitTopLevel(s){
+  var out=[], buf="", i, c, depth=0, q=false;
+  for(i=0;i<s.length;i++){
+    c=s.charAt(i);
+    if(q){
+      buf+=c;
+      if(c==="\\"){ buf+=s.charAt(++i); continue; }
+      if(c==='"') q=false;
+      continue;
+    }
+    if(c==='"'){ q=true; buf+=c; continue; }
+    if(c==="["||c==="{"){ depth++; buf+=c; continue; }
+    if(c==="]"||c==="}"){ depth--; buf+=c; continue; }
+    if(c===","&&depth===0){ out.push(buf); buf=""; continue; }
+    buf+=c;
+  }
+  if(buf.length) out.push(buf);
+  return out;
+}
+function parseTyphoonList(txt){
+  try{
+    var rows=[], re=/\[\s*(\d+)\s*,/g, m, start;
+    while((m=re.exec(txt))){
+      start=m.index;
+      var depth=0, i, c, end=-1, q=false;
+      for(i=start;i<txt.length;i++){
+        c=txt.charAt(i);
+        if(q){ if(c==="\\"){ i++; continue; } if(c==='"') q=false; continue; }
+        if(c==='"'){ q=true; continue; }
+        if(c==="[") depth++;
+        else if(c==="]"){ depth--; if(depth===0){ end=i; break; } }
+      }
+      if(end<0) break;
+      var inner=txt.substring(start,end+1);
+      var f=splitTopLevel(inner.substring(1,inner.length-1));
+      if(f.length>=8) rows.push(f);
+      re.lastIndex=end;
+    }
+    /* 解析不出任何条目：区分"合法的空列表"与"响应损坏"。
+       返回 null 表示本次失败，调用方会保留上一次的台风数据，不会误清空。 */
+    if(!rows.length){
+      return /"typhoonList"\s*:\s*\[\s*\]/.test(txt)?[]:null;
+    }
+    var out=[], i, r;
+    for(i=0;i<rows.length;i++){
+      r=rows[i];
+      var status=String(r[7]||"").replace(/"/g,"");
+      if(status==="stop") continue;            /* 已停编，不显示 */
+      out.push({
+        id:r[0].replace(/"/g,""),
+        en:String(r[1]||"").replace(/"/g,""),
+        cn:String(r[2]||"").replace(/"/g,"").replace(/\\n/g,""),
+        num:r[3].replace(/"/g,""),
+        status:status,
+        level:TYPHOON_STATUS[status]||"编号中"
+      });
+    }
+    return out;
+  }catch(e){ return null; }
+}
+function fetchTyphoon(cb){
+  cb=cb||function(){};
+  xhrGet(TYPHOON_URL,function(ok,data){
+    if(ok&&data&&data.text){
+      var t=parseTyphoonList(data.text);
+      if(t){ TYPHOONS=t; TYPHOON_AT=nowClock(); }
+    }
+    cb(ok);
+  });
+}
+/* 台风提示文案；无台风返回空串 */
+function typhoonText(){
+  if(!TYPHOONS.length) return "";
+  var a=[], i;
+  for(i=0;i<TYPHOONS.length;i++){ a.push(TYPHOONS[i].cn+"（"+TYPHOONS[i].num+"·"+TYPHOONS[i].level+"）"); }
+  return a.join("、");
+}
+function initApp(){
+  try{ window.resizeTo(430,660); }catch(e){}
+  try{ window.moveTo(screen.availWidth-460,30); }catch(e){}
+  loadCfg();
+  bindDrag();
+  bindPoster();
+  bindToast();
+  bindMarquee();
+  bindSettingsUI();
+  bindSchoolUI();
+  myLoad();
+  schoolLoad();
+  holInit(); holLoad();
+  document.getElementById("btnClose").onclick=function(){ window.close(); };
+  document.getElementById("btnSettings").onclick=function(){
+    var sel=document.getElementById("cfgCity");
+    if(!sel.options.length){
+      for(var k in cityMap){
+        sel.options[sel.options.length]=new Option(k,k);
+      }
+    }
+    sel.value=cfg.city;
+    var wsel=document.getElementById("cfgWeek");
+    if(wsel) wsel.value=(cfg.weekStart===0)?"0":"1";
+    var ssel=document.getElementById("cfgSchool");
+    if(ssel) ssel.value=(cfg.showSchool===1)?"1":"0";
+    var asel=document.getElementById("cfgAuto");
+    if(asel) asel.value=isAutostart()?"1":"0";
+    sel.onchange=function(){ cfg.city=sel.value; updateSchoolRow(); renderSchList(); };
+    updateSchoolRow();
+    renderSchList();
+    renderMfList();
+    document.getElementById("holTip").innerHTML=
+      "放假调休安排来自国务院办公厅通知，可联网自动同步。<br>"+escHtml(holStatusText());
+    document.getElementById("settings").style.display="block";
+  };
+  document.getElementById("cfgSave").onclick=function(){
+    /* 开机自启：写/删 HKCU Run 注册表项 */
+    var asel=document.getElementById("cfgAuto");
+    if(asel){
+      var wantOn=(asel.value==="1");
+      var okAuto=setAutostart(wantOn);
+      if(!okAuto){
+        alert(wantOn?"无法写入启动项，请检查注册表权限。":"无法删除启动项，请检查注册表权限。");
+      }else if(wantOn){
+        asel.title=autostartCmd();
+      }
+    }
+    var city=document.getElementById("cfgCity").value;
+    var ssel=document.getElementById("cfgSchool");
+    cfg.showSchool=(ssel&&ssel.value==="1" && SCHOOL_MAP[city])?1:0;
+    if(city && cityMap[city]){
+      cfg.city=city;
+      cfg.code=cityMap[city].code;
+      cfg.lat=cityMap[city].lat;
+      cfg.lng=cityMap[city].lng;
+      lastWeather=null; weatherFailed=false; live=null;
+      fetchWeather(true); fetchLive();
+    }
+    /* 每周起始日与城市无关，单独设置并始终落盘 */
+    var wsel=document.getElementById("cfgWeek");
+    cfg.weekStart=(wsel&&wsel.value==="0")?0:1;
+    saveCfg();
+    document.getElementById("settings").style.display="none";
+    redrawCurrent();
+  };
+  document.getElementById("cfgCancel").onclick=function(){
+    document.getElementById("settings").style.display="none";
+  };
+  document.getElementById("holSync").onclick=function(){
+    var btn=this, tip=document.getElementById("holTip");
+    btn.disabled=true; tip.innerHTML="正在同步国务院放假调休安排…";
+    syncHolidays(true,function(st,updated){
+      btn.disabled=false;
+      tip.innerHTML=(updated?("已更新 "+updated+" 个年度"):"未获取到更新（可能尚未公布或无网络）")
+        +"　当前："+holStatusText();
+      redrawCurrent();
+    });
+  };
+  document.getElementById("schSync").onclick=function(){
+    var btn=this, tip=document.getElementById("schTip");
+    btn.disabled=true; tip.innerHTML="正在检查校历数据…";
+    syncSchool(true,function(st){
+      btn.disabled=false;
+      updateSchoolRow();
+      tip.innerHTML=(st=="synced"?"校历已更新。\n":"暂无可用远程校历数据源，已使用内置数据。\n")+schoolStatusText();
+      redrawCurrent();
+    });
+  };
+  document.getElementById("prevBtn").onclick=function(){ inMonthView?shiftMonth(-1):shiftDay(-1); };
+  document.getElementById("nextBtn").onclick=function(){ inMonthView?shiftMonth(1):shiftDay(1); };
+  document.getElementById("todayBtn").onclick=goToday;
+  document.getElementById("toggleBtn").onclick=function(){ showView(!inMonthView); };
+  document.getElementById("prevYear").onclick=function(){ shiftMonth(-12); };
+  document.getElementById("nextYear").onclick=function(){ shiftMonth(12); };
+  document.getElementById("prevMonth").onclick=function(){ shiftMonth(-1); };
+  document.getElementById("nextMonth").onclick=function(){ shiftMonth(1); };
+  document.getElementById("calBody").onclick=function(){
+    var e=window.event, t=e.srcElement;
+    while(t && t.tagName!="TD") t=t.parentNode;
+    if(t && t.getAttribute("data-d")){
+      cur=new Date(viewY,viewM-1,parseInt(t.getAttribute("data-d"),10));
+      showView(false);
+    }
+  };
+  showView(false);
+  lastTodayKey=todayKeyOf(new Date());
+  defer(function(){ fetchWeather(true); fetchLive(); }, 400);
+  defer(function(){ fetchTyphoon(); }, 900);
+  defer(function(){ fetchLive(); }, 2500);
+  /* 调休安排：启动后延迟同步（避开 onload 阶段的请求限制），之后每天复查一次 */
+  defer(function(){ syncHolidays(false, function(st,updated){ if(updated) redrawCurrent(); }); }, 1200);
+  setInterval(tick,30000);
+}
+
+if(typeof window!="undefined"){ window.onload=initApp; }
+//__HL_END__
+</script>
+</body>
+</html>
