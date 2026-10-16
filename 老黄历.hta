@@ -353,7 +353,9 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
   <div id="settings">
     <div class="setHead"><b>设置</b><span class="setX" id="setClose" title="关闭设置">✕</span></div>
     <div class="setBody">
-    <div class="hint">选择城市（天气数据来源：中国气象局，国内可直连）</div>
+    <div class="hint">天气数据来源：中国气象局（全国可直连）。首次启动会自动定位所在城市，之后不再联网查询。</div>
+    <div class="hint" id="geoTip"></div>
+    <div class="row" id="geoRow"><label>定位</label><button id="btnGeo">重新定位</button></div>
     <div class="row"><label>城市</label><select id="cfgCity"></select></div>
     <div class="row"><label>每周</label><select id="cfgWeek">
       <option value="1">周一开头</option>
@@ -1548,6 +1550,10 @@ var cityMap={
   "北京":{code:"101010100",lat:39.9042,lng:116.4074},
   "上海":{code:"101020100",lat:31.2304,lng:121.4737},
   "深圳":{code:"101280601",lat:22.5431,lng:114.0579},
+  /* 南山区：中国气象局提供区级观测编码 101280604。
+     深圳跨区较广，区级数据比全市代表站更贴近实际（尤其南山与罗湖天气常不同）。
+     坐标为南山区中心，用于日出日落的天文计算。 */
+  "深圳南山":{code:"101280604",lat:22.5331,lng:113.9308},
   "广州":{code:"101280101",lat:23.1291,lng:113.2644},
   "杭州":{code:"101210101",lat:30.2741,lng:120.1551},
   "成都":{code:"101270101",lat:30.5728,lng:104.0668},
@@ -1622,7 +1628,7 @@ function weatherIcon(type){
 var cur=new Date();
 var viewY, viewM;
 var inMonthView=false;
-var cfg={city:"北京",code:"101010100",lat:39.9042,lng:116.4074,weekStart:1,showSchool:0,winW:0,winH:0,winX:0,winY:0};
+var cfg={city:"北京",code:"101010100",lat:39.9042,lng:116.4074,weekStart:1,showSchool:0,winW:0,winH:0,winX:0,winY:0,geoDone:0};
 var lastWeather=null, lastFetchTs=0, weatherFailed=false, weatherRetry=0;
 /* 最近一次成功取得的官方(sojson)天气类型，例如"多云"。
    sojson 偶发失败时继续沿用，不回退到 wttr.in 测站的天气代码。 */
@@ -1659,6 +1665,7 @@ function parseCfgText(s){
   /* 位置可能为负（多显示器时副屏在主屏左侧） */
   m=/"winX"\s*:\s*(-?\d+)/.exec(s);        if(m) c.winX=parseInt(m[1],10);
   m=/"winY"\s*:\s*(-?\d+)/.exec(s);        if(m) c.winY=parseInt(m[1],10);
+  m=/"geoDone"\s*:\s*([01])/.exec(s);      if(m) c.geoDone=parseInt(m[1],10);
   if(isNaN(c.lat)||isNaN(c.lng)) return null;
   return c;
 }
@@ -1686,6 +1693,8 @@ function loadCfg(){
     var winH=(typeof c.winH==="number" && c.winH>0)?c.winH:0;
     var winX=(typeof c.winX==="number")?c.winX:0;
     var winY=(typeof c.winY==="number")?c.winY:0;
+    /* 是否已完成过一次自动定位（1=不再每次启动联网查询） */
+    var geo=(c.geoDone===1)?1:0;
     /* 以城市编码为准，保证城市名/经纬度/天气编码三者始终一致。
        注意此分支会整体替换 c，只保留 {city,code,lat,lng}，
        因此其余字段必须在替换前取出、替换后回填。 */
@@ -1707,6 +1716,7 @@ function loadCfg(){
     cfg.winH=winH;
     cfg.winX=winX;
     cfg.winY=winY;
+    cfg.geoDone=geo;
   }catch(e){}
 }
 function saveCfg(){
@@ -1717,6 +1727,7 @@ function saveCfg(){
     /* 只写 ASCII（城市编码+经纬度），彻底避开系统代码页的中文编码问题 */
     var f=fso.CreateTextFile(folder+"\\huangli_cfg.json",true);
     var win=(cfg.winW>0 && cfg.winH>0)?(',"winW":'+cfg.winW+',"winH":'+cfg.winH+',"winX":'+cfg.winX+',"winY":'+cfg.winY):"";
+  win+=',"geoDone":'+(cfg.geoDone===1?1:0);
     f.Write('{"code":"'+cfg.code+'","lat":'+cfg.lat+',"lng":'+cfg.lng+',"weekStart":'+(cfg.weekStart===0?0:1)+',"showSchool":'+(cfg.showSchool===1?1:0)+win+'}\r\n');
     f.Close();
   }catch(e){}
@@ -2586,6 +2597,122 @@ function cleanupAll(){
   for(var i=0;i<gXhr.length;i++){ try{ gXhr[i].abort(); }catch(e){} }
   gXhr.length=0;
 }
+/* ============================================================
+   启动自动定位（续）
+   ------------------------------------------------------------
+   目的：用户换地方、或别人拿到程序直接用，都不需要手动选城市。
+   做法：启动时做一次 IP 定位（免密钥、明文 HTTP 可用），
+        拿到经纬度后，在 cityMap 里找坐标最近的一个城市作为结果，
+        而不是去匹配接口返回的行政区名称——各家接口的
+        city/region 字段写法差异极大（实测ip-api.com 对深圳返回的是
+        "Keji yuan" 这种街道名），用坐标最稳妥。
+   只在「从未成功定位过」时执行一次并把结果落盘，之后启动不再联网查询；
+   失败则标记未完成，下次启动自动重试。设置面板可手动「重新定位」。
+   ============================================================ */
+var GEO_URL="http://ip-api.com/json/?lang=zh-CN";
+function geoDist(lat1,lng1,lat2,lng2){
+  var r=6371, dr=(lat2-lat1)*Math.PI/180, dl=(lng2-lng1)*Math.PI/180;
+  var a=Math.sin(dr/2)*Math.sin(dr/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dl/2)*Math.sin(dl/2);
+  return 2*r*Math.asin(Math.min(1,Math.sqrt(a)));
+}
+/* 坐标最近的城市；limitKm 内才算命中，避免定位漂到境外时选出荒唐结果 */
+function nearestCity(lat,lng,limitKm){
+  var best=null, bd=1e9, k, c;
+  for(k in cityMap){
+    if(!Object.prototype.hasOwnProperty.call(cityMap,k)) continue;
+    c=cityMap[k];
+    var d=geoDist(lat,lng,c.lat,c.lng);
+    if(d<bd){ bd=d; best=k; }
+  }
+  if(!best || bd>(limitKm||300)) return null;
+  return {city:best, km:bd};
+}
+/* 执行定位。cb(ok, cityName, info) */
+function geoDetect(cb){
+  cb=cb||function(){};
+  var xhr=null;
+  try{ xhr=regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){
+    try{ xhr=regXhr(new ActiveXObject("Msxml2.XMLHTTP.6.0")); }catch(e2){
+      try{ xhr=regXhr(new XMLHttpRequest()); }catch(e3){ xhr=null; }
+    }
+  }
+  if(!xhr){ cb(false,"",null); return; }
+  var done=false;
+  /* ok/city/info 三个参数要如实传给回调：
+     早前误写成 cb(ok,"",info)，导致回调拿到的城市名恒为空串，
+     applyGeoCity("") 直接返回，定位静默失败（界面仍显示原城市）。 */
+  function finish(ok,city,info){
+    if(done) return; done=true;
+    try{ xhr.abort(); }catch(e){}
+    cb(ok,city||"",info);
+  }
+  try{
+    try{ xhr.setTimeouts(12000,12000,12000,12000); }catch(e5){}
+    xhr.open("GET",GEO_URL,true);
+    xhr.onreadystatechange=function(){
+      if(xhr.readyState!=4) return;
+      if(xhr.status!=200){ finish(false,"",null); return; }
+      var lat=NaN, lng=NaN, nm="";
+      try{
+        var t=String(xhr.responseText||"");
+        var m=/"lat"\s*:\s*(-?[0-9.]+)/.exec(t); if(m) lat=parseFloat(m[1]);
+        m=/"lon"\s*:\s*(-?[0-9.]+)/.exec(t);       if(m) lng=parseFloat(m[1]);
+        m=/"city"\s*:\s*"([^"]*)"/.exec(t);        if(m) nm=m[1];
+        m=/"regionName"\s*:\s*"([^"]*)"/.exec(t); if(m) nm=nm||m[1];
+      }catch(e6){}
+      if(isNaN(lat)||isNaN(lng)||Math.abs(lat)>90||Math.abs(lng)>180){ finish(false,"",null); return; }
+      var near=nearestCity(lat,lng,300);
+      if(!near){ finish(false,"",null); return; }
+      finish(true,near.city,{lat:lat,lng:lng,km:near.km,raw:nm});
+    };
+    xhr.send(null);
+  }catch(e){ finish(false,"",null); }
+}
+/* 定位成功后应用城市并落盘 */
+function applyGeoCity(cityName){
+  if(!cityMap[cityName]) return false;
+  cfg.city=cityName;
+  cfg.code=cityMap[cityName].code;
+  cfg.lat=cityMap[cityName].lat;
+  cfg.lng=cityMap[cityName].lng;
+  cfg.geoDone=1;
+  lastWeather=null; live=null; lastOfficialType="";
+  try{ saveCfg(); }catch(e){}
+  return true;
+}
+/* 自动定位：silent=true 时不打扰用户（启动流程用），
+   silent=false 时在设置面板里给出明确反馈（手动点「重新定位」用） */
+function tryAutoGeo(silent){
+  var tip=document.getElementById("geoTip");
+  if(!silent && tip) tip.innerHTML="正在自动定位…";
+  geoDetect(function(ok,cityName,info){
+    var box=document.getElementById("geoRow");
+    if(ok){
+      var changed=(cityName!==cfg.city);
+      applyGeoCity(cityName);
+      if(!silent && tip){
+        tip.innerHTML="已定位到 <b>"+escHtml(cityName)+"</b>"
+          +(info&&info.km?("（距该点约 "+Math.round(info.km)+" 公里）"):"")
+          +(changed?"，天气已切换":"");
+      }
+      whenIdle(function(){
+        fetchWeather(true);
+        fetchLive();
+        if(box) updateGeoRow();
+        redrawCurrent();
+      });
+    }else{
+      /* 失败不写 geoDone，下次启动自动重试 */
+      if(!silent && tip) tip.innerHTML="<span style='color:#a8231a'>自动定位失败（可能无网络），可在下方手动选择城市</span>";
+    }
+  });
+}
+function updateGeoRow(){
+  var tip=document.getElementById("geoTip");
+  if(!tip) return;
+  if(cfg.geoDone===1) tip.innerHTML="已自动定位：<b>"+escHtml(cfg.city)+"</b>（启动时只查询一次；换城市可点右侧重新定位）";
+  else tip.innerHTML="尚未自动定位，启动时会自动尝试一次";
+}
 function closeApp(){
   if(closing) return;
   closing=true;
@@ -2909,18 +3036,19 @@ function autostartEntryHta(){
   }catch(e){ return ""; }
 }
 function normPath(p){ return String(p||"").replace(/\//g,"\\").toLowerCase(); }
-/* 自愈：程序被移盘/改名后，启动项仍指向旧路径且旧文件已不存在时，
-   自动改写为当前运行路径。若旧文件仍在，则视为用户有意保留多份，不动。 */
+/* 自愈：程序被移盘/改名、或存在多份副本时，
+   把启动项统一改写为"当前正在运行的这一份"，保证下次登录打开的是用户在用的版本。 */
 function fixAutostartPath(){
   var cur=currentHtaPath();
   if(!/\.hta$/i.test(cur)) return false;
   var old=autostartEntryHta();
   if(!old) return false;                          /* 没开启动项，不动 */
   if(normPath(old)===normPath(cur)) return false;  /* 已指向当前 */
-  try{
-    var fso=fsoObj();
-    if(fso && fso.FileExists(old)) return false;   /* 旧路径仍存在，交给用户决定 */
-  }catch(e){}
+  /* 启动项指向别的副本时，一律跟随到"当前正在运行的这一份"。
+     早前的做法是「旧路径文件仍存在就不动」，想让用户自己去设置里重开开关；
+     但只要旧副本还在（比如换 U 盘、或同一部电脑上留了两份），
+     启动项就会永远停在旧路径上，登录后打开的不是用户正在用的那一份。
+     现在以实际运行的这份为准，符合直觉。 */
   var s=shellObj();
   if(!s) return false;
   try{
@@ -3233,7 +3361,22 @@ try{ window.onresize=onWinResize; }catch(e){}
     if(ssel) ssel.value=(cfg.showSchool===1)?"1":"0";
     var asel=document.getElementById("cfgAuto");
     if(asel) asel.value=isAutostart()?"1":"0";
-    sel.onchange=function(){ cfg.city=sel.value; updateSchoolRow(); renderSchList(); };
+    updateGeoRow();
+    document.getElementById("btnGeo").onclick=function(){
+      var b=this;
+      b.disabled=true;
+      tryAutoGeo(false);
+      setTimeout(function(){ b.disabled=false; },4000);
+    };
+    /* 手动改城市视为用户明确选择：置 geoDone=1，
+       这样下次启动不会自动定位把它覆盖回去。 */
+    sel.onchange=function(){
+      cfg.city=sel.value;
+      cfg.geoDone=1;
+      updateGeoRow();
+      updateSchoolRow();
+      renderSchList();
+    };
     updateSchoolRow();
     renderSchList();
     renderMfList();
@@ -3338,6 +3481,9 @@ try{ window.onresize=onWinResize; }catch(e){}
   showView(false);
   lastTodayKey=todayKeyOf(new Date());
   defer(function(){ fetchWeather(true); fetchLive(); }, 400);
+  /* 启动自动定位：仅在从未成功定位过时执行一次（结果已落盘）。
+     异步发起、不阻塞界面，拿到结果后再刷新天气。 */
+  if(!cfg.geoDone) defer(function(){ tryAutoGeo(false); }, 700);
   defer(function(){ fetchTyphoon(); }, 900);
   defer(function(){ fetchLive(); }, 2500);
   /* 调休安排：启动后延迟同步（避开 onload 阶段的请求限制），之后每天复查一次 */
