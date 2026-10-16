@@ -23,6 +23,17 @@
 html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
   font-family:"KaiTi","STKaiti","楷体","DFKai-SB",serif;width:100%;height:100%;}
 #app{position:absolute;top:0;left:0;right:0;bottom:0;background:#b3251a;color:#2b2b2b;overflow:hidden;}
+/* 缩放舞台：内部一律按 430x660 的设计尺寸排版，
+   由 layoutStage() 按窗口大小设置 zoom 等比缩放并居中。
+   用普通 div 而非 html 根元素——IE9 对根元素 zoom 支持不可靠。 */
+#stage{position:absolute;left:0;top:0;width:430px;height:660px;zoom:1;overflow:hidden;}
+/* 缩放手柄：位于 #stage 之外，不受 zoom 影响，恒为固定像素，方便鼠标对准。
+   HTA 无边框，系统不给可拖拽边缘，只能靠这个手柄让用户调整窗口大小。 */
+#resizeGrip{position:absolute;right:0;bottom:0;width:22px;height:22px;z-index:80;cursor:se-resize;
+  border-left:22px solid transparent;border-bottom:22px solid #ce765f;background:transparent;}
+#resizeGrip b{position:absolute;right:2px;bottom:-1px;font:bold 13px/13px "SimSun",serif;
+  color:#7a4a12;letter-spacing:-2px;cursor:se-resize;}
+#resizeGrip:hover{border-bottom-color:#ffe9bf;}
 #page{position:absolute;top:2px;left:2px;right:2px;bottom:2px;background:#f7f0dc;overflow:hidden;
   border:1px solid #d9b877;}
 /* ---------- 顶部浮动栏（鼠标靠近顶部显示） ---------- */
@@ -87,6 +98,12 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
 .yjList{font-size:15.5px;line-height:23px;color:#2b2b2b;margin-top:4px;}
 .infoLine{text-align:center;font-size:15px;color:#5a4a3a;line-height:23px;}
 .infoLine b{color:#a8231a;}
+/* 台风预警独立占一行，不再挤占天气实况的位置。
+   做成整行警示丸：有台风时出现，无台风时 display:none 完全不占高度。 */
+#tyLine{line-height:19px;}
+#tyLine .tyBox{display:block;padding:0 8px;border-radius:9px;background:#f6d8d1;
+  border:1px solid #dd9a8c;color:#9c1c10;font-weight:bold;font-size:13.5px;
+  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
 .aqi{display:inline-block;padding:0 7px;border-radius:9px;font-size:12.5px;line-height:19px;
   vertical-align:1px;font-weight:bold;}
 .aqism{font-size:11px;margin-left:3px;font-weight:bold;}
@@ -113,6 +130,9 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
 .mHeader button{border:none;background:#b3251a;color:#fbe9c6;font-size:15px;width:32px;height:30px;
   cursor:pointer;margin:0 3px;vertical-align:middle;font-family:inherit;}
 .mHeader button:hover{background:#8f1d12;}
+/* 「返回黄历」是文字按钮，需要比 32px 的箭头宽得多 */
+.mHeader #mBackBtn{width:auto;padding:0 12px;font-size:14px;font-weight:bold;
+  border-radius:3px;letter-spacing:1px;}
 #mTitle{font-size:23px;font-weight:bold;color:#8c2f23;vertical-align:middle;display:inline-block;
   min-width:160px;letter-spacing:2px;}
 #calWrap{position:absolute;top:52px;left:8px;right:8px;bottom:8px;}
@@ -141,11 +161,12 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
 .ld.fest,.ld.term{color:#c22012;font-weight:bold;}
 .ld.lunar1{color:#8c2f23;}
 /* ---------- 底部导航（自动隐藏） ---------- */
+/* 底部导航条：鼠标靠近窗口底部时浮现，2.6 秒后自动收起 */
 #nav{position:absolute;bottom:0;left:0;right:0;height:48px;z-index:15;display:none;
   background:#b3251a;border-top:2px solid #8f1d12;text-align:center;}
-#nav button{border:none;background:#f2e7cc;color:#a8231a;font-size:15px;font-weight:bold;
-  padding:0 13px;height:32px;margin:8px 4px 0 4px;cursor:pointer;font-family:inherit;
-  border-radius:3px;}
+#nav button{border:none;background:#f2e7cc;color:#a8231a;font-size:14px;font-weight:bold;
+  padding:0 8px;height:32px;margin:8px 2px 0 2px;cursor:pointer;font-family:inherit;
+  border-radius:3px;white-space:nowrap;}
 #nav button:hover{background:#fff8e7;}
 /* ---------- 自定义节日提示 ---------- */
 #toast{position:absolute;top:96px;left:22px;right:22px;z-index:30;display:none;cursor:pointer;
@@ -162,36 +183,67 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
   text-shadow:0 3px 10px rgba(0,0,0,0.75),0 0 26px rgba(255,180,60,0.55);
   font-family:"Microsoft YaHei","SimHei",sans-serif;}
 /* ---------- 设置 ---------- */
-#settings{position:absolute;top:40px;left:24px;right:24px;max-height:580px;overflow:auto;
+#settings{position:absolute;top:40px;left:24px;right:24px;max-height:580px;overflow:hidden;
   background:#fff8e7;border:2px solid #b3251a;
   box-shadow:0 6px 18px rgba(60,20,10,0.35);
   padding:14px;z-index:20;display:none;font-size:14px;color:#3a2f28;}
 #settings .sect{font-size:13.5px;font-weight:bold;color:#b3251a;border-top:1px solid #e0d0a8;
   padding-top:9px;margin:12px 0 7px;letter-spacing:1px;}
-.mfItem{border:1px solid #e0d0a8;background:#fffdf6;padding:5px 8px;margin-bottom:5px;font-size:13px;position:relative;}
+.mfItem{border:1px solid #e0d0a8;background:#fffdf6;padding:5px 46px 5px 8px;margin-bottom:5px;font-size:13px;position:relative;}
 .mfItem b{color:#a8231a;}
 .mfItem .d{color:#7a6a55;font-size:11.5px;}
 .mfItem .x{position:absolute;top:3px;right:7px;color:#b3251a;font-weight:bold;cursor:pointer;font-size:14px;}
 .mfItem .e{position:absolute;top:3px;right:24px;color:#2e7d32;font-weight:bold;cursor:pointer;font-size:14px;}
 .mfItem.editing{background:#fff3d6;border-color:#d4a017;}
 .mfItem .t{color:#5a4a3a;font-size:12px;margin-top:2px;white-space:pre-wrap;}
-.mfAdd input,.mfAdd select{width:100%;font-family:inherit;font-size:13px;padding:3px 5px;
+/* 两列并排用固定像素宽度，不用百分比。
+   原因：IE 下 <select> 会忽略 width:100% 而改用内容固有宽度，
+   加上 border-box 在 IE 的处理差异，百分比方案会出现两框重叠。
+   宽度取值需扣除滚动条：面板 382 - 边框4 - 内边距28 - 滚动条17 - setBody内边距2 ≈ 331px，
+   故两列各 150px + 间距 8px = 308px，确保并排不换行。 */
+.mfAdd input,.mfAdd select{box-sizing:border-box;font-family:inherit;font-size:13px;padding:3px 5px;
   border:1px solid #c9a063;background:#fff;margin-bottom:5px;}
-.mfAdd .two{display:inline-block;width:48.5%;vertical-align:top;}
-.mfAdd .two2{display:inline-block;width:48.5%;vertical-align:top;margin-left:2%;}
+.mfAdd input.fw,.mfAdd select.fw{width:100%;}
+.mfAdd .two{display:inline-block;width:150px;vertical-align:top;}
+.mfAdd .two2{display:inline-block;width:150px;vertical-align:top;margin-left:8px;}
+.mfAdd .two input,.mfAdd .two select,
+.mfAdd .two2 input,.mfAdd .two2 select{width:150px;}
 .mfEmpty{font-size:12px;color:#9a8a70;padding:4px 0;}
+/* 设置面板：标题栏与字段标签 */
+/* 标题栏固定在顶部：IE9 不支持 position:sticky，
+   故把可滚动内容拆进 .setBody，外层 #settings 不再滚动。
+   ✕ 用 float:right 靠右上角——IE9 不支持 flexbox，margin-left:auto 无效。 */
+.setHead{overflow:hidden;margin:-4px 0 10px;padding-bottom:6px;
+  border-bottom:1px solid #e0d0a8;}
+.setHead b{float:left;font-size:17px;color:#a8231a;letter-spacing:2px;}
+.setHead .setX{float:right;width:26px;height:24px;line-height:24px;text-align:center;
+  color:#b3251a;font-size:17px;font-weight:bold;cursor:pointer;border-radius:3px;}
+.setHead .setX:hover{background:#b3251a;color:#fff;}
+.setBody{max-height:520px;overflow:auto;padding-right:2px;}
+.mfAdd .fl{font-size:12px;color:#7a6242;margin:7px 0 2px;}
+.mfAdd .fl i{font-style:normal;color:#b3251a;margin-left:2px;}
+.mfAdd .fl em{font-style:normal;color:#9a8a70;margin-left:5px;}
+.syncBar{margin-top:-6px;}
+.syncBar .syncLink{color:#a8231a;text-decoration:underline;cursor:pointer;}
+.syncBar .syncLink:hover{color:#fff;background:#a8231a;padding:1px 4px;border-radius:3px;}
+.syncBar .syncLink.disabled{color:#b0a48c;text-decoration:none;cursor:default;background:none;}
 .mfMsg{min-height:17px;font-size:12px;margin-top:3px;}
 .mfMsg .err{color:#b3251a;}
 .mfMsg .ok{color:#1b5e20;}
 #settings .row{margin-bottom:12px;}
 #settings label{display:inline-block;width:56px;}
-#settings select{width:180px;font-family:inherit;font-size:15px;padding:3px 4px;border:1px solid #c9a063;background:#fff;}
+/* 只给顶部配置行的下拉框加宽；表单里的 select 由 .mfAdd 规则控制宽度。
+   注意不能写成 #settings select{width:230px}——ID 选择器优先级高于类选择器，
+   会把 .mfAdd .two select{width:150px} 覆盖掉，导致下拉框撑破容器压住旁边的输入框。 */
+#settings select{font-family:inherit;font-size:15px;padding:3px 4px;border:1px solid #c9a063;background:#fff;}
+#settings .row select{width:230px;}
 #settings button{border:none;background:#b3251a;color:#fbe9c6;font-size:15px;padding:6px 18px;margin-right:8px;cursor:pointer;font-family:inherit;border-radius:3px;}
 #settings .hint{font-size:13px;color:#8a7a60;margin-bottom:12px;}
 </style>
 </head>
 <body>
 <div id="app">
+  <div id="stage">
   <div id="floatTop">
     <button id="btnSettings" class="tbbtn" title="设置">⚙</button>
     老黄历
@@ -229,6 +281,7 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
           <div class="infoLine" id="chongLine"></div>
           <div class="infoLine" id="moonLine"></div>
           <div class="infoLine" id="weatherLine"></div>
+          <div class="infoLine" id="tyLine" style="display:none;"></div>
           <div class="infoLine" id="airLine"></div>
           <div class="fc5" id="fc5"></div>
           <div class="infoLine" id="sunLine"></div>
@@ -263,6 +316,7 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
         <span id="mTitle"></span>
         <button id="nextMonth" title="下一月">▶</button>
         <button id="nextYear" title="下一年">≫</button>
+        <button id="mBackBtn" title="回到每日黄历">返回黄历</button>
       </div>
       <div id="calWrap">
         <table id="calTable">
@@ -297,6 +351,8 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
 
   <!-- 设置面板 -->
   <div id="settings">
+    <div class="setHead"><b>设置</b><span class="setX" id="setClose" title="关闭设置">✕</span></div>
+    <div class="setBody">
     <div class="hint">选择城市（天气数据来源：中国气象局，国内可直连）</div>
     <div class="row"><label>城市</label><select id="cfgCity"></select></div>
     <div class="row"><label>每周</label><select id="cfgWeek">
@@ -314,37 +370,47 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
     <div class="hint" id="schTip"></div>
     <div id="schList"></div>
     <div class="mfAdd">
-      <input id="schName" placeholder="名称，如：寒假">
+      <div class="fl">名称<i>*</i></div>
+      <input id="schName" class="fw"  placeholder="如：寒假 / 秋假">
+      <div class="fl">开始日期 / 结束日期<i>*</i></div>
       <span class="two"><input id="schFrom" placeholder="开始 2027-01-23"></span><span class="two2"><input id="schTo" placeholder="结束 2027-02-21"></span>
+      <div class="fl">示例：寒假 2027-01-23 ~ 2027-02-21。单日假期可两格填同一天。</div>
       <button id="schAdd">添加校历</button>
       <button id="schCancel" style="display:none;">取消</button>
       <div id="schMsg" class="mfMsg"></div>
     </div>
     <div class="row">
-      <button id="cfgSave">保存</button>
-      <button id="cfgCancel">取消</button>
-      <button id="holSync">同步调休</button>
-      <button id="schSync">同步校历</button>
+      <button id="cfgSave">保存并关闭</button>
+      <button id="cfgCancel">关闭（不保存）</button>
     </div>
-    <div class="hint" id="holTip">放假调休安排来自国务院办公厅通知，可联网自动同步。</div>
+    <div class="hint" id="holTip">放假调休安排来自国务院办公厅通知，每天首次运行时自动同步。</div>
+    <div class="hint syncBar"><span class="syncLink" id="syncLink" title="立即拉取一次，不必等待每日自动同步">立即更新假期数据（调休 + 校历）</span></div>
 
     <div class="sect">自定义节日（结婚纪念日、生日等）</div>
     <div id="mfList"></div>
     <div class="mfAdd">
-      <input id="mfName" placeholder="名称，如：结婚纪念日">
+      <div class="fl">名称<i>*</i></div>
+      <input id="mfName" class="fw"  placeholder="如：结婚纪念日">
+      <div class="fl">重复方式 / 日期<i>*</i></div>
       <span class="two"><select id="mfType">
         <option value="Y">每年（公历）</option>
         <option value="L">每年（农历）</option>
         <option value="O">仅一次</option>
-      </select></span><span class="two2"><input id="mfDate" placeholder="03-14 / 农历8-15 / 2027-03-14"></span>
-      <input id="mfText" placeholder="弹窗文字，如：结婚十周年！">
-      <input id="mfPic" placeholder="配图（可选）：图片网址 / 搜索词 / images 下的图片名">
+      </select></span><span class="two2"><input id="mfDate" placeholder="03-14（生日，不用填年）"></span>
+      <div class="fl" id="mfDateTip"></div>
+      <div class="fl">弹窗文字<em>可选</em></div>
+      <input id="mfText" class="fw"  placeholder="到期时滚动显示，如：结婚十周年！">
+      <div class="fl">配图<em>可选</em></div>
+      <input id="mfPic" class="fw"  placeholder="图片网址 / 搜索词 / images 下的图片名">
       <button id="mfAdd">添加</button>
       <button id="mfCancel" style="display:none;">取消</button>
       <div id="mfMsg" class="mfMsg"></div>
     </div>
-  </div>
-</div>
+</div><!-- /.setBody -->
+    </div><!-- /.settings -->
+  </div><!-- /.stage -->
+  <div id="resizeGrip" title="拖动此角调整窗口大小（也可按 Alt+↑/↓ 微调）"><b>◢</b></div>
+  </div><!-- /.app -->
 
 <script language="javascript">
 //__HL_START__
@@ -707,7 +773,10 @@ function myNormalizeDate(str,type){
     if(yy<1900||yy>2100||mm<1||mm>12||dd2<1||dd2>31) return "";
     return yy+"-"+("0"+mm).slice(-2)+"-"+("0"+dd2).slice(-2);
   }
-  if(p.length!=2) return "";
+  if(p.length!=2){
+    /* 每年类型也接受带年份的完整日期，忽略年份只取月-日 */
+    if(p.length==3 && type!="O"){ p=[p[1],p[2]]; } else { return ""; }
+  }
   var a=parseInt(p[0],10), b=parseInt(p[1],10);
   if(isNaN(a)||isNaN(b)||a<1||a>12||b<1||b>31) return "";
   return ("0"+a).slice(-2)+"-"+("0"+b).slice(-2);
@@ -1389,7 +1458,11 @@ function wmoCn(code){
   if(c===179||c===317||c===320||c===323||c===326) return "小雪";
   if(c===182||c===335||c===338||c===350) return "雨夹雪";
   if(c===185||c===311||c===314) return "冻雨";
-  if(c===293||c===296) return "小雨";
+  /* 293 = Patchy light rain（局部性小雨），只是测站附近的零星降雨，
+     用作整座城市的天气描述会与市区实况明显不符（用户体感晴天却显示小雨），
+     因此降级为"阵雨"；真正稳定的轻雨是 296 = Light rain。 */
+  if(c===293) return "阵雨";
+  if(c===296) return "小雨";
   if(c===299||c===302) return "中雨";
   if(c===305||c===308) return "大雨";
   if(c===329||c===332) return "大雪";
@@ -1446,7 +1519,7 @@ function parseLiveText(t){
 function fetchLive(){
   var url="http://wttr.in/"+encodeURIComponent(cfg.city)+"?format=j1";
   var xhr=null;
-  try{ xhr=new ActiveXObject("MSXML2.ServerXMLHTTP.6.0"); }catch(e){ return; }
+  try{ xhr=regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){ return; }
   if(!xhr) return;
   try{
     try{ xhr.setTimeouts(20000,20000,20000,20000); }catch(e0){}
@@ -1456,7 +1529,7 @@ function fetchLive(){
       if(xhr.readyState==4 && xhr.status==200){
         try{
           var v=parseLiveText(xhr.responseText);
-          if(v){ live=v; liveAt=nowClock(); if(!inMonthView) renderWeatherLine(cur.getFullYear(),cur.getMonth()+1,cur.getDate()); }
+          if(v){ live=v; liveAt=nowClock(); whenIdle(function(){ if(!inMonthView) renderWeatherLine(cur.getFullYear(),cur.getMonth()+1,cur.getDate()); }); }
         }catch(e){}
       }
     };
@@ -1549,8 +1622,11 @@ function weatherIcon(type){
 var cur=new Date();
 var viewY, viewM;
 var inMonthView=false;
-var cfg={city:"北京",code:"101010100",lat:39.9042,lng:116.4074,weekStart:1,showSchool:0};
+var cfg={city:"北京",code:"101010100",lat:39.9042,lng:116.4074,weekStart:1,showSchool:0,winW:0,winH:0,winX:0,winY:0};
 var lastWeather=null, lastFetchTs=0, weatherFailed=false, weatherRetry=0;
+/* 最近一次成功取得的官方(sojson)天气类型，例如"多云"。
+   sojson 偶发失败时继续沿用，不回退到 wttr.in 测站的天气代码。 */
+var lastOfficialType="";
 var renderedYMD=null;
 var lastTodayKey=0;   /* 上一次心跳看到的"今天"（YYYYMMDD），用于跨天检测 */
 var posterKey=null, posterDetail=false, posterBusy=0;
@@ -1578,6 +1654,11 @@ function parseCfgText(s){
   m=/"code"\s*:\s*"([^"]*)"/.exec(s);       if(m) c.code=m[1];
   m=/"weekStart"\s*:\s*([01])/.exec(s);     if(m) c.weekStart=parseInt(m[1],10);
   m=/"showSchool"\s*:\s*([01])/.exec(s);   if(m) c.showSchool=parseInt(m[1],10);
+  m=/"winW"\s*:\s*(\d+)/.exec(s);          if(m) c.winW=parseInt(m[1],10);
+  m=/"winH"\s*:\s*(\d+)/.exec(s);          if(m) c.winH=parseInt(m[1],10);
+  /* 位置可能为负（多显示器时副屏在主屏左侧） */
+  m=/"winX"\s*:\s*(-?\d+)/.exec(s);        if(m) c.winX=parseInt(m[1],10);
+  m=/"winY"\s*:\s*(-?\d+)/.exec(s);        if(m) c.winY=parseInt(m[1],10);
   if(isNaN(c.lat)||isNaN(c.lng)) return null;
   return c;
 }
@@ -1600,7 +1681,14 @@ function loadCfg(){
     /* 每周起始日（0=周日, 1=周一）与城市无关，需在下面重建 c 之后回填 */
     var ws=(c.weekStart===0)?0:1;
     var shRaw=c.showSchool;   /* 可能为 undefined（老配置没有该字段） */
-    /* 以城市编码为准，保证城市名/经纬度/天气编码三者始终一致 */
+    /* 窗口尺寸同理：必须在下面 c 被整体替换之前先取出来 */
+    var winW=(typeof c.winW==="number" && c.winW>0)?c.winW:0;
+    var winH=(typeof c.winH==="number" && c.winH>0)?c.winH:0;
+    var winX=(typeof c.winX==="number")?c.winX:0;
+    var winY=(typeof c.winY==="number")?c.winY:0;
+    /* 以城市编码为准，保证城市名/经纬度/天气编码三者始终一致。
+       注意此分支会整体替换 c，只保留 {city,code,lat,lng}，
+       因此其余字段必须在替换前取出、替换后回填。 */
     if(c.code){
       var byCode=codeToCity(c.code);
       if(byCode) c=byCode;
@@ -1614,6 +1702,11 @@ function loadCfg(){
     cfg.weekStart=ws;
     /* 老配置缺该字段时：深圳默认开启春秋假，其他城市默认关闭 */
     cfg.showSchool=(shRaw===undefined)?((cfg.city==="深圳")?1:0):(shRaw===1?1:0);
+    /* 上次退出时的窗口大小与位置；0 表示从未调整过，启动时用设计基准 */
+    cfg.winW=winW;
+    cfg.winH=winH;
+    cfg.winX=winX;
+    cfg.winY=winY;
   }catch(e){}
 }
 function saveCfg(){
@@ -1623,7 +1716,8 @@ function saveCfg(){
     var fso=fsoObj();
     /* 只写 ASCII（城市编码+经纬度），彻底避开系统代码页的中文编码问题 */
     var f=fso.CreateTextFile(folder+"\\huangli_cfg.json",true);
-    f.Write('{"code":"'+cfg.code+'","lat":'+cfg.lat+',"lng":'+cfg.lng+',"weekStart":'+(cfg.weekStart===0?0:1)+',"showSchool":'+(cfg.showSchool===1?1:0)+'}\r\n');
+    var win=(cfg.winW>0 && cfg.winH>0)?(',"winW":'+cfg.winW+',"winH":'+cfg.winH+',"winX":'+cfg.winX+',"winY":'+cfg.winY):"";
+    f.Write('{"code":"'+cfg.code+'","lat":'+cfg.lat+',"lng":'+cfg.lng+',"weekStart":'+(cfg.weekStart===0?0:1)+',"showSchool":'+(cfg.showSchool===1?1:0)+win+'}\r\n');
     f.Close();
   }catch(e){}
 }
@@ -1682,7 +1776,7 @@ function posterPicKind(pic){
 }
 function xhrGet(url,onDone,isImg){
   var xhr=null, finished=false;
-  try{ xhr=new ActiveXObject("MSXML2.ServerXMLHTTP.6.0"); }catch(e){ xhr=null; }
+  try{ xhr=regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){ xhr=null; }
   if(!xhr){ onDone(false,null); return; }
   function finish(ok,data){ if(finished) return; finished=true; try{ onDone(ok,data); }catch(e2){} }
   try{
@@ -1955,30 +2049,47 @@ function renderWeatherLine(y,m,d){
   var el=document.getElementById("weatherLine");
   var idx=currentForecastIndex();
   var fc=(idx>=0&&lastWeather&&lastWeather.forecast)?lastWeather.forecast[idx]:null;
-  var lv=live;
-  if(fc||lv){
+  /* 只要显示的是"今天"才允许用实况数据。
+     sojson 一次返回 15 天预报，而 wttr.in 的 current_condition 只是此刻的实况；
+     翻到明天/后天时若仍拿实况温度、湿度、风速、AQI 来配那一天的预报，
+     就会出现"明天的页面显示今天的实况温度"这类串日错误。 */
+  var today=(function(){
+    var n=new Date();
+    return (n.getFullYear()==y && (n.getMonth()+1)==m && n.getDate()==d);
+  })();
+  var lv=today?live:null;
+  /* 记住最近一次成功取得的官方天气类型。
+     官方源(sojson)偶发超时/限流时，若回退到 wttr.in 自有测站的天气代码，
+     会把"Patchy light rain(293)"这类局部阵雨显示成全市"小雨"，与市区实况不符。
+     因此官方类型一经取得便一直沿用，不因单次请求失败而退化。 */
+  if(fc&&fc.type) lastOfficialType=fc.type;
+  var cmaType=lastOfficialType;
+  if(cmaType||lv){
     /* 天气状况以中国气象局(sojson)为准：wttr.in 用的是自有测站，偶发"附近有雨"就报毛毛雨，
        与国内官方口径不符。数值(温度/体感/风/气压/能见度)仍取 wttr.in 的实况，更及时。 */
-    var cmaType=(fc&&fc.type)?fc.type:"";
     var wrType=(lv&&lv.type)?lv.type:"";
     var type=cmaType||wrType;
-    var iconT=cmaType||wrType||"阴";
+    var iconT=type||"阴";
+    /* 温度来历：有 wttr 实况用实况温度，否则退回气象局当日高低温 */
     var main="";
     if(lv&&lv.temp!=="") main=lv.temp+"°"+((lv.feels!=="")?(" 体感"+lv.feels+"°"):"");
     else if(fc) main=fc.low+"~"+fc.high+"°";
     var tip=[];
-    if(fc) tip.push("气象局 "+fc.low+"~"+fc.high+"° "+fc.type);
+    if(lastOfficialType) tip.push("气象局 "+cmaType+(fc?(" "+fc.low+"~"+fc.high+"°"):""));
+    else if(wrType) tip.push("天气来自 wttr.in 测站（官方源暂不可用）："+wrType);
     if(lv){ tip.push("实况 "+lv.temp+"°"); if(lv.pres) tip.push("气压 "+lv.pres+"hPa"); if(lv.vis) tip.push("能见度 "+lv.vis+"km"); if(lv.wind) tip.push(lv.wind+" "+lv.windKmh+"km/h"); }
     if(cmaType&&wrType&&cmaType!==wrType) tip.push("wttr.in 测站为"+wrType+"（"+(lv&&lv.desc?lv.desc:"")+"），与气象局口径可能有差异");
     var tpTxt=typhoonText();
     if(tpTxt) tip.push("⚠ 台风： "+tpTxt+(TYPHOON_AT?"（"+TYPHOON_AT+" 更新）":""));
     if(liveAt) tip.push("更新 "+liveAt);
+    /* 台风预警单独走 #tyLine，天气实况永远保留在本行，
+       不再用台风信息覆盖掉"小雪 / 29° / 体感"等天气内容 */
     var wtxt=weatherIcon(iconT)+cfg.city+" "+type+"　"+main;
-    if(tpTxt) wtxt=weatherIcon("台风")+cfg.city+" <span class='tyw'>⚠ "+tpTxt+"</span>";
     el.innerHTML=wtxt;
     el.title=tip.join(" · ");
     if(idx>=0) renderForecast5(idx);
-    renderAirLine();
+    renderAirLine(today);
+    renderTyphoonLine();
     return;
   }
   if(weatherFailed){
@@ -1997,18 +2108,42 @@ function weekLabelOf(ymd){
   var w=new Date(parseInt(p[0],10), parseInt(p[1],10)-1, parseInt(p[2],10)).getDay();
   return "周"+"日一二三四五六".charAt(w);
 }
+/* 五日预报的日期标签。
+   必须按"该日期与真实今天相差几天"来生成，不能按它在数组中的位置：
+   renderForecast5(idx) 的 idx 来自当前浏览的日期，翻页后 idx 不再是 0，
+   若按位置写死 i==0→今天，翻到明天时就会把"明天"标成"今天"。 */
+function dayLabelOf(ymd){
+  var p=String(ymd).split("-");
+  if(p.length<3) return "";
+  var d=new Date(parseInt(p[0],10),parseInt(p[1],10)-1,parseInt(p[2],10));
+  if(isNaN(d.getTime())) return "";
+  var n=new Date();
+  var t0=new Date(n.getFullYear(),n.getMonth(),n.getDate());
+  /* 用 Math.round 抵消夏令时/时区造成的不足一天的误差 */
+  var diff=Math.round((d-t0)/86400000);
+  if(diff===0) return "今天";
+  if(diff===1) return "明天";
+  if(diff===2) return "后天";
+  if(diff===-1) return "昨天";
+  return "周"+"日一二三四五六".charAt(d.getDay());
+}
 function renderForecast5(idx){
   var el=document.getElementById("fc5");
   if(!el) return;
+  /* 取不到该日期的预报时必须清空，否则会残留上一次的陈旧预报，
+     造成"翻到很远的日子，五日预报却还停在那几天"的错觉。 */
+  if(!lastWeather||!lastWeather.forecast||idx<0||idx>=lastWeather.forecast.length){
+    el.innerHTML=""; return;
+  }
   var fc=lastWeather.forecast;
   var n=fc.length-idx; if(n>5) n=5;
   if(n<=0){ el.innerHTML=""; return; }
   var html="", i;
   for(i=0;i<n;i++){
     var f=fc[idx+i];
-    var lbl=(i==0)?"今天":((i==1)?"明天":weekLabelOf(f.ymd));
+    if(!f) break;
+    var lbl=dayLabelOf(f.ymd);
     var a=aqiInfo(f.aqi);
-    var aq=(a&&i==0)?"":"";
     var aqHtml=(a)?"<span class='aqism' style='color:"+a.c+";' title='当日预报AQI "+f.aqi+" "+a.n+"（非实时）'>"+f.aqi+"</span>":"";
     html+="<div class='cell'>"
         +"<div class='d'>"+lbl+aqHtml+"</div>"
@@ -2024,8 +2159,11 @@ function numOnly(s){ var m=/(-?[0-9]+(?:\.[0-9]+)?)/.exec(String(s)); return m?m
 function parseWeatherText(t){
   var res={wendu:"",shidu:"",pm25:"",pm10:"",quality:"",obsTime:"",aqi:-1,forecast:[]}, m, i;
   m=/"time"\s*:\s*"([^"]*)"/.exec(t);   if(m) res.obsTime=m[1];
-  /* 顶层官方 AQI：出现在 "sunrise","sunset" 之后，紧跟 sunset，区别于 forecast[].aqi */
-  m=/"sunset"\s*:\s*"[^"]*"\s*,\s*"aqi"\s*:\s*(\d+)/.exec(t); if(m) res.aqi=parseInt(m[1],10);
+  /* sojson 的 data 下并不存在实时 AQI。
+     响应里所有 "aqi" 都属于 forecast[].aqi（当日预报值）或 yesterday.aqi；
+     旧的 "sunset","aqi" 正则会命中 forecast[0].aqi，即把"今日预报 AQI"
+     冒充成实时空气质量显示，同时压制了按 HJ633 用 PM2.5/PM10 换算的正确路径。
+     因此这里不取，res.aqi 恒为 -1，实时空气质量统一走 calcRealtimeAQI()。 */
   m=/"wendu"\s*:\s*"([^"]*)"/.exec(t);   if(m) res.wendu=m[1];
   m=/"shidu"\s*:\s*"([^"]*)"/.exec(t);   if(m) res.shidu=m[1];
   m=/"pm25"\s*:\s*(-?[0-9.]+)/.exec(t);  if(m) res.pm25=m[1];
@@ -2091,11 +2229,13 @@ function currentForecastIndex(){
   }
   return -1;
 }
-function renderAirLine(){
+function renderAirLine(showLive){
   var el=document.getElementById("airLine");
   if(!el) return;
   var parts=[], tip=[];
-  var lv=live;
+  /* showLive=false 表示正在查看非今天的日期，
+     此时不能用此刻的实况湿度/风/气压/AQI 去描述那一天，只能给出污染物等级。 */
+  var lv=showLive?live:null;
   if(lv){
     if(lv.hum!=="") parts.push("湿度 <b>"+lv.hum+"%</b>");
     if(lv.wind) parts.push(lv.wind+"风 "+(lv.windKmh||"")+"km/h");
@@ -2104,26 +2244,34 @@ function renderAirLine(){
   }else if(lastWeather && lastWeather.shidu){
     parts.push("湿度 <b>"+lastWeather.shidu+"</b>");
   }
-/* 优先用中国气象局官方 AQI（含 O3/NO2 等全部污染物）；
-   官方值缺失时才退回用 PM2.5/PM10 按国标 HJ633 自行换算。 */
-var offAqi=(lastWeather&&lastWeather.aqi>=0)?lastWeather.aqi:-1;
-var rt=(offAqi>=0)?offAqi:calcRealtimeAQI();
-if(rt>=0){
+/* 空气质量：查看"今天"时给实时换算值，查看其它日期时只能给当日预报值。
+   实时值来自 data.pm25/pm10（此刻浓度），预报值来自 forecast[].aqi。 */
+if(showLive){
+  var rt=calcRealtimeAQI();
+  if(rt>=0){
     var a=aqiInfo(rt);
     if(a) parts.push("<span class='aqi' style='color:"+a.c+";background:"+a.bg+"'>空气 "+rt+" "+a.n+"</span>");
-    tip.push(offAqi>=0?"AQI 为中国气象局官方发布值（含全部污染物）":"AQI 为国标HJ633按PM2.5/PM10换算（官方值缺失时的近似）");
+    tip.push("AQI 为国标 HJ 633-2012 按实时 PM2.5/PM10 浓度换算（官方接口不提供实时 AQI）；下方五日预报中的数字为当日预报 AQI，与实时值可能不同");
     if(lastWeather.pm25) tip.push("PM2.5 "+lastWeather.pm25+" μg/m³");
     if(lastWeather.pm10) tip.push("PM10 "+lastWeather.pm10+" μg/m³");
     if(lastWeather.quality) tip.push("站点评级 "+lastWeather.quality);
     if(lastWeather.obsTime) tip.push("污染物观测 "+lastWeather.obsTime);
   }else{
-    var idx=currentForecastIndex();
-    if(lastWeather&&lastWeather.forecast&&idx>=0){
-      var f=lastWeather.forecast[idx], a2=aqiInfo(f.aqi);
-      if(a2) parts.push("<span class='aqi' style='color:"+a2.c+";background:"+a2.bg+"'>日AQI "+f.aqi+" "+a2.n+"</span>");
+    var idxR=currentForecastIndex();
+    if(lastWeather&&lastWeather.forecast&&idxR>=0){
+      var fR=lastWeather.forecast[idxR], aR=aqiInfo(fR.aqi);
+      if(aR) parts.push("<span class='aqi' style='color:"+aR.c+";background:"+aR.bg+"'>日AQI "+fR.aqi+" "+aR.n+"</span>");
       tip.push("AQI 为当日预报值（非实时）");
     }
   }
+}else{
+  var idxD=currentForecastIndex();
+  if(lastWeather&&lastWeather.forecast&&idxD>=0){
+    var fD=lastWeather.forecast[idxD], aD=aqiInfo(fD.aqi);
+    if(aD) parts.push("<span class='aqi' style='color:"+aD.c+";background:"+aD.bg+"'>日AQI "+fD.aqi+" "+aD.n+"</span>");
+    tip.push("AQI 为当日预报值（非实时）");
+  }
+}
   if(lv&&lv.pres) tip.push("气压 "+lv.pres+" hPa");
   if(lv&&lv.vis) tip.push("能见度 "+lv.vis+" km");
   if(liveAt) tip.push("天气更新 "+liveAt);
@@ -2142,9 +2290,9 @@ function fetchWeather(force){
   lastFetchTs=now;
   var url="http://t.weather.sojson.com/api/weather/city/"+cfg.code;
   var xhr=null;
-  try{ xhr=new ActiveXObject("MSXML2.ServerXMLHTTP.6.0"); }catch(e){
-    try{ xhr=new ActiveXObject("Msxml2.XMLHTTP.6.0"); }catch(e2){
-      try{ xhr=new XMLHttpRequest(); }catch(e3){ xhr=null; }
+  try{ xhr=regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){
+    try{ xhr=regXhr(new ActiveXObject("Msxml2.XMLHTTP.6.0")); }catch(e2){
+      try{ xhr=regXhr(new XMLHttpRequest()); }catch(e3){ xhr=null; }
     }
   }
   if(!xhr){ weatherFailed=true; weatherRetryLater(); return; }
@@ -2275,29 +2423,139 @@ function goToday(){ cur=new Date(); if(inMonthView){ viewY=cur.getFullYear(); vi
 
 /* ---------- 拖动 + 自动隐藏 ---------- */
 var dragging=false, offX=0, offY=0;
-var navTimer=0, topTimer=0;
-function hideBars(){
-  var ft=document.getElementById("floatTop"), nv=document.getElementById("nav");
-  if(ft) ft.style.display="none";
-  if(nv) nv.style.display="none";
+var mvLast=0, mvX=0, mvY=0;
+var dragPending=false, dragSx=0, dragSy=0;
+/* ---------- 手势期间推迟界面更新 ----------
+   拖动/缩放窗口时，任何一次界面重绘都会重排整个日历。
+   若后台任务（天气/台风/调休的异步回调，或 30 秒一次的 tick）
+   恰好在拖动过程中完成并触发重绘，就会表现为"顺滑一阵、忽然卡一下"，
+   每次重新拖动又表现不同，非常难排查。
+   因此手势进行中一律不更新界面，把请求排队，等手势结束后统一执行。 */
+var idleTimer=0, idleQueue=[];
+function isGesturing(){ return (dragging||dragPending||rzOn); }
+function whenIdle(fn){
+  if(!isGesturing()){ try{ fn(); }catch(e){} return; }
+  idleQueue.push(fn);
+  try{
+    if(idleTimer) clearTimeout(idleTimer);
+    idleTimer=setTimeout(function(){ flushIdle(); },220);
+  }catch(e){}
 }
+function flushIdle(){
+  try{ if(idleTimer){ clearTimeout(idleTimer); idleTimer=0; } }catch(e){}
+  if(isGesturing()){
+    try{ idleTimer=setTimeout(function(){ flushIdle(); },220); }catch(e){}
+    return;
+  }
+  var q=idleQueue; idleQueue=[];
+  for(var i=0;i<q.length;i++){ try{ q[i](); }catch(e){} }
+}
+var navTimer=0, topTimer=0;
+var barTopOn=false, barNavOn=false, barArmed=false;
+/* 窗口缩放：HTA 是无边框窗口（BORDER="none"/CAPTION="no"），
+   系统不提供可拖拽的边框，因此必须在页面里自带缩放手柄。
+
+   实现要点：
+   1) 用「按下时的窗口左上角」作锚点，配合鼠标的屏幕绝对坐标算尺寸，
+      属于绝对计算而非增量累加，不会因 resizeTo 异步生效而漂移。
+      （早前用 resizeBy + 读回 clientWidth 的写法会因读回旧值而产生累积误差，
+        表现为窗口越拖越偏、拖不回去。）
+   2) 锁定 BASE_W:BASE_H 宽高比，窗口始终恰好贴合内容，
+      不会出现大片红边导致"背景与内容脱层"。
+   3) mousemove 频率极高，必须节流，否则每帧都触发窗口+zoom 全量重排而卡顿。 */
+var rzOn=false, rzSx=0, rzSy=0, rzBaseW=0, rzBaseH=0, rzLast=0, rzZoom=0, rzCap=false;
+var RZ_MIN_W=300, RZ_MIN_H=400, RZ_MAX_W=1600, RZ_MAX_H=2400;
+function bindResize(){
+  var g=document.getElementById("resizeGrip");
+  if(!g) return;
+  g.onmousedown=function(){
+    var e=window.event;
+    if(!e) return;
+    rzOn=true;
+    rzSx=e.screenX; rzSy=e.screenY;
+    rzLast=0; rzZoom=0;
+    /* 关键：基准必须取「外框」尺寸。
+       若用 clientWidth（客户区）作基准而 resizeTo 收的是外框尺寸，
+       每次拖动都会比实际少一个边框厚度，表现为窗口每点一次就缩小一圈。 */
+    var cw=document.documentElement.clientWidth||BASE_W;
+    var ch=document.documentElement.clientHeight||BASE_H;
+    var ow=window.outerWidth||0, oh=window.outerHeight||0;
+    rzBaseW=(ow>cw)?ow:cw+16;
+    rzBaseH=(oh>ch)?oh:ch+39;
+    /* 抓住鼠标：窗口缩小后光标仍留在窗口外时，mousemove 仍能送达，
+       否则手柄会"抓不住"，一缩小光标就出窗导致拖拽中断。 */
+    try{ g.setCapture(true); rzCap=true; }catch(x){}
+    try{ e.returnValue=false; e.cancelBubble=true; }catch(x){}
+    return false;
+  };
+}
+function resizeRelease(){
+  if(rzCap){
+    var g=document.getElementById("resizeGrip");
+    try{ if(g) g.releaseCapture(); }catch(x){}
+    rzCap=false;
+  }
+}
+function resizeMove(e){
+  if(!rzOn) return false;
+  var now=new Date().getTime();
+  if(now-rzLast<50) return false;
+  rzLast=now;
+  /* 全程使用按下时固定的基准做增量计算，绝不读回实际尺寸，
+     因此不存在误差累积；缩放比例变化时也不会丢失参考点。 */
+  var w=rzBaseW+(e.screenX-rzSx);
+  var h=rzBaseH+(e.screenY-rzSy);
+  if(w<RZ_MIN_W) w=RZ_MIN_W; if(w>RZ_MAX_W) w=RZ_MAX_W;
+  if(h<RZ_MIN_H) h=RZ_MIN_H; if(h>RZ_MAX_H) h=RZ_MAX_H;
+  var ar=BASE_W/BASE_H;
+  if(Math.abs(w-rzBaseW) >= Math.abs(h-rzBaseH)) h=Math.round(w/ar);
+  else w=Math.round(h*ar);
+  if(h<RZ_MIN_H){ h=RZ_MIN_H; w=Math.round(h*ar); }
+  if(w<RZ_MIN_W){ w=RZ_MIN_W; h=Math.round(w/ar); }
+  try{ window.resizeTo(w,h); }catch(x){}
+  if(now-rzZoom>140){ rzZoom=now; layoutStage(); }
+  try{ e.returnValue=false; e.cancelBubble=true; }catch(x){}
+  return false;
+}
+function resizeEnd(){
+  if(!rzOn) return;
+  rzOn=false;
+  resizeRelease();
+  layoutStage();
+  saveWindowSize();
+}
+/* 顶部浮动栏显隐统一走 showTop()：
+   所有对 style.display 的修改都必须经由这里同步标志位，
+   否则标志位与真实 DOM 状态会不一致（表现为移出窗口后 title 再也弹不出来）。 */
+function showTop(on){
+  if(barTopOn==on) return;
+  barTopOn=on;
+  var ft=document.getElementById("floatTop");
+  if(ft) ft.style.display=on?"block":"none";
+}
+/* #nav 恢复自动隐藏：鼠标移到底部附近时浮现，2.6 秒后自动收起 */
+function showNav(on){
+  if(barNavOn==on) return;
+  barNavOn=on;
+  var nv=document.getElementById("nav");
+  if(nv) nv.style.display=on?"block":"none";
+}
+function hideBars(){ showTop(false); showNav(false); }
 function clearBarTimers(){
   try{ if(navTimer){ clearTimeout(navTimer); navTimer=0; } }catch(e){}
   try{ if(topTimer){ clearTimeout(topTimer); topTimer=0; } }catch(e){}
+  barArmed=false;
 }
 /* 兜底：即使鼠标不再移动，也强制在若干毫秒后收起，避免停留不消失 */
 function armBarTimers(){
   clearBarTimers();
+  barArmed=true;
   try{
     navTimer=setTimeout(function(){
-      var nv=document.getElementById("nav");
-      if(nv) nv.style.display="none";
-      navTimer=0;
+      navTimer=0; barArmed=false; showNav(false);
     },2600);
     topTimer=setTimeout(function(){
-      var ft=document.getElementById("floatTop");
-      if(ft) ft.style.display="none";
-      topTimer=0;
+      topTimer=0; barArmed=false; showTop(false);
     },2600);
   }catch(e){}
 }
@@ -2306,45 +2564,121 @@ function updateBars(){
   if(!e) return;
   var y=e.clientY||0;
   var h=document.documentElement.clientHeight||document.body.clientHeight||660;
-  var ft=document.getElementById("floatTop"), nv=document.getElementById("nav");
-  var wantTop=(y>0 && y<32);
-  var wantNav=(y>0 && y>h-50);
-  if(ft) ft.style.display=wantTop?"block":"none";
-  if(nv) nv.style.display=wantNav?"block":"none";
-  if(wantTop||wantNav) armBarTimers(); else clearBarTimers();
+  showTop(y>0 && y<32);
+  showNav(y>0 && y>h-50);
+  if(barTopOn||barNavOn){ if(!barArmed) armBarTimers(); } else clearBarTimers();
+}
+/* ---------- 退出 ----------
+   mshta 的宿主进程只有在脚本环境彻底静默后才会结束。
+   只要还有 setInterval 在跑、或有未完成的 XMLHttp 请求，
+   窗口虽然关了，进程仍会驻留；下次启动时 SINGLEINSTANCE 会误判
+   "已有实例在运行"，于是既不新开窗口也不刷新界面，表现为关不掉。
+   因此关闭前必须先清干净定时器并中止所有在途请求。 */
+var closing=false, tickTimer=0;
+var gXhr=[];
+function regXhr(x){ if(x) gXhr.push(x); return x; }
+function cleanupAll(){
+  flushWindowSize();   /* 退出前补写尚未落盘的窗口尺寸 */
+  try{ if(tickTimer){ clearInterval(tickTimer); tickTimer=0; } }catch(e){}
+  try{ if(mqTimer){ clearInterval(mqTimer); mqTimer=0; } }catch(e){}
+  clearBarTimers();
+  try{ if(layoutTimer){ clearTimeout(layoutTimer); layoutTimer=0; } }catch(e){}
+  for(var i=0;i<gXhr.length;i++){ try{ gXhr[i].abort(); }catch(e){} }
+  gXhr.length=0;
+}
+function closeApp(){
+  if(closing) return;
+  closing=true;
+  cleanupAll();
+  try{ window.close(); }catch(e){}
+  setTimeout(function(){
+    try{ if(typeof oHuangLi=="object") oHuangLi.Close(); }catch(e){}
+    try{ window.close(); }catch(e){}
+  },80);
+}
+/* 仅保留 Alt+↑/↓ 微调窗口高度。
+   曾用 Esc/F4 退出，但切换到别的窗口再切回来时按键会被误送到本程序，
+   极易把程序直接关掉，代价远大于收益——退出只认右上角 ✕ 按钮。 */
+function bindKeys(){
+  document.onkeydown=function(){
+    var e=window.event;
+    if(!e) return;
+    var k=e.keyCode||e.which;
+    if(e.altKey && (k==38||k==40)){
+      var step=(e.shiftKey)?40:12;
+      try{ window.resizeBy(0, k==38?-step:step); }catch(x){}
+      layoutStage();
+      try{ e.returnValue=false; }catch(x){}
+      return false;
+    }
+  };
 }
 function bindDrag(){
   document.onmousedown=function(){
     var e=window.event, t=e.srcElement;
     if(!t) return;
-    if(t.tagName=="BUTTON"||t.tagName=="INPUT"||t.tagName=="TD"||t.tagName=="A") return;
+    if(t.id=="resizeGrip") return;   /* 交给 bindResize 的 onmousedown */
+    if(t.tagName=="BUTTON"||t.tagName=="INPUT"||t.tagName=="SELECT"||t.tagName=="TEXTAREA"||t.tagName=="A") return;
     var p=t;
     while(p){
       if(p.id=="settings") return;
       p=p.parentNode;
     }
-    dragging=true;
     offX=e.screenX-window.screenLeft;
     offY=e.screenY-window.screenTop;
+    if(t.tagName=="TD"||t.tagName=="TH"||t.tagName=="OPTION"){
+      /* 日历表格几乎占满整个窗口，若直接排除就等于"无处可拖"。
+         这里先按住不动，移动超过阈值才转为拖动窗口，
+         从而兼顾"拖动窗口"与"点击单元格切换日期"两种操作。 */
+      dragPending=true; dragSx=e.screenX; dragSy=e.screenY;
+      return;
+    }
+    dragging=true; dragPending=false;
   };
   document.onmousemove=function(){
     var e=window.event;
-    if(dragging){
-      window.moveTo(e.screenX-offX, e.screenY-offY);
+    if(rzOn) return resizeMove(e);   /* 缩放优先，缩放期间禁止移动窗口 */
+    if(dragPending && (Math.abs(e.screenX-dragSx)>4 || Math.abs(e.screenY-dragSy)>4)){
+      dragPending=false; dragging=true;
     }
-    updateBars();
+    if(dragging){
+      var nx=e.screenX-offX, ny=e.screenY-offY, now=new Date().getTime();
+      /* moveTo 只做 60fps 节流（同一像素不重复调用）。
+       卡顿的主因是拖动期间发生界面重绘，已由 isGesturing/whenIdle 拦掉，
+       这里不必过度节流，否则反而会出现"追不上鼠标"的顿挫感。 */
+      if(now-mvLast>=16 && (nx!=mvX || ny!=mvY)){
+        mvLast=now; mvX=nx; mvY=ny;
+        try{ window.moveTo(nx,ny); }catch(x){}
+      }
+    }
+    /* 正在拖动窗口时不必更新栏位：此时鼠标位置相对窗口是跳变的，
+       判断出来的"靠近上/下边缘"没有意义，而且能省掉每帧的 clientHeight 读取
+       （读取布局属性会触发强制重排，本身就是拖动卡顿的一环）。 */
+    if(!dragging && !rzOn) updateBars();
   };
-  document.onmouseup=function(){ dragging=false; };
+  document.onmouseup=function(){
+    var wasDragging=dragging;
+    dragging=false; dragPending=false; resizeEnd();
+    /* 拖动过窗口也要记住新位置，否则只有缩放才会触发落盘 */
+    if(wasDragging) saveWindowSize();
+    flushIdle();   /* 手势结束，立刻执行期间推迟的界面更新 */
+  };
   /* 指针离开窗口：立即收起（relatedTarget 为空表示真的离开了文档） */
   document.onmouseleave=function(){ dragging=false; hideBars(); clearBarTimers(); };
   document.onmouseout=function(){
     var e=window.event;
-    if(!e.relatedTarget){ dragging=false; hideBars(); clearBarTimers(); }
+    /* 缩放期间即使光标短暂出窗也不能中断——手柄靠 setCapture 继续跟踪，
+       只有真正松开（mouseup）才结束 resizeEnd()。 */
+    if(!e.relatedTarget && !rzOn){ dragging=false; hideBars(); clearBarTimers(); }
   };
   window.onblur=function(){ hideBars(); clearBarTimers(); };
 }
 
 function tick(){
+  /* 拖动/缩放窗口期间完全跳过后台任务：
+     这里会发网络请求，响应回来就会重绘界面，正好撞上拖动就会造成卡顿。
+     30 秒一轮，下一轮自然会补上，不会漏掉同步。 */
+  if(isGesturing()) return;
   /* 跨天自动翻页 + 天气定时刷新 + 调休安排每日复查 */
   var n=new Date();
   var key=todayKeyOf(n);
@@ -2379,9 +2713,11 @@ function tick(){
 }
 var lastLiveTs=0;
 function redrawCurrent(){
-  try{
-    if(inMonthView) renderMonth(); else renderDay();
-  }catch(e){}
+  whenIdle(function(){
+    try{
+      if(inMonthView) renderMonth(); else renderDay();
+    }catch(e){}
+  });
 }
 
 var mfMsgTimer=0;
@@ -2394,6 +2730,21 @@ function mfMsg(txt, ok){
     try{ mfMsgTimer=setTimeout(function(){ var e2=document.getElementById("mfMsg"); if(e2) e2.innerHTML=""; }, 5000); }
     catch(e2){}
   }
+}
+/* 日期提示随"重复方式"联动，回答用户"每年要不要填年份"这个疑问 */
+var MF_DATE_HELP={
+  Y:'<div class="fl">示例：填「03-14」表示每年公历 3 月 14 日（如生日）；<b>不用填年份</b>。也接受 3-14、2027-03-14。</div>',
+  L:'<div class="fl">示例：填「8-15」表示每年<b>农历</b>八月十五（如中秋）；<b>不用填年份</b>。</div>',
+  O:'<div class="fl">示例：填「2027-03-14」，<b>只在这一天提醒，必须填年份</b>。过了就不再提醒。</div>'
+};
+function mfDateHelp(){
+  var yEl=document.getElementById("mfType"), dEl=document.getElementById("mfDate"), tip=document.getElementById("mfDateTip");
+  if(!yEl||!dEl||!tip) return;
+  var t=String(yEl.value||"Y");
+  tip.innerHTML=MF_DATE_HELP[t]||"";
+  dEl.placeholder = (t=="Y") ? "03-14（生日，不用填年）"
+             : (t=="L") ? "8-15（农历，不用填年）"
+             : "2027-03-14（需填年份）";
 }
 function mfSetBtn(editing){
   var b=document.getElementById("mfAdd"), c=document.getElementById("mfCancel");
@@ -2464,6 +2815,9 @@ function mfAddAction(){
 function bindSettingsUI(){
   var addBtn=document.getElementById("mfAdd");
   if(addBtn) addBtn.onclick=mfAddAction;
+  var typeSel=document.getElementById("mfType");
+  if(typeSel) typeSel.onchange=mfDateHelp;   /* 切换重复方式即时更新日期示例 */
+  mfDateHelp();
   var kf=function(e){
     var k=e.keyCode||e.which;
     if(k==13){ try{ e.returnValue=false; }catch(e4){} mfAddAction(); }
@@ -2535,6 +2889,45 @@ var RUN_SUB="Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 var RUN_NAME="WinCalendar";
 function shellObj(){ try{ return new ActiveXObject("WScript.Shell"); }catch(e){ return null; } }
 function runRegFull(){ return "HKCU\\"+RUN_SUB+"\\"+RUN_NAME; }
+function currentHtaPath(){
+  try{
+    if(typeof location=="undefined"||!location) return "";
+    return String(location.pathname||"").replace(/\//g,"\\");
+  }catch(e){ return ""; }
+}
+/* 从启动项命令行里抠出 .hta 路径 */
+function autostartEntryHta(){
+  try{
+    var s=shellObj();
+    if(!s) return "";
+    var v=s.RegRead(runRegFull());
+    if(!v) return "";
+    var m=/"([^"]+\.hta)"/i.exec(v);
+    if(m) return m[1];
+    m=/(\S+\.hta)/i.exec(v);
+    return m?m[1]:"";
+  }catch(e){ return ""; }
+}
+function normPath(p){ return String(p||"").replace(/\//g,"\\").toLowerCase(); }
+/* 自愈：程序被移盘/改名后，启动项仍指向旧路径且旧文件已不存在时，
+   自动改写为当前运行路径。若旧文件仍在，则视为用户有意保留多份，不动。 */
+function fixAutostartPath(){
+  var cur=currentHtaPath();
+  if(!/\.hta$/i.test(cur)) return false;
+  var old=autostartEntryHta();
+  if(!old) return false;                          /* 没开启动项，不动 */
+  if(normPath(old)===normPath(cur)) return false;  /* 已指向当前 */
+  try{
+    var fso=fsoObj();
+    if(fso && fso.FileExists(old)) return false;   /* 旧路径仍存在，交给用户决定 */
+  }catch(e){}
+  var s=shellObj();
+  if(!s) return false;
+  try{
+    s.RegWrite(runRegFull(), autostartCmd(cur), "REG_SZ");
+    return true;
+  }catch(e2){ return false; }
+}
 function autostartCmd(htaPath){
   var raw="";
   if(htaPath!=null) raw=String(htaPath);
@@ -2645,23 +3038,178 @@ function fetchTyphoon(cb){
   xhrGet(TYPHOON_URL,function(ok,data){
     if(ok&&data&&data.text){
       var t=parseTyphoonList(data.text);
-      if(t){ TYPHOONS=t; TYPHOON_AT=nowClock(); }
+      if(t){ TYPHOONS=t; TYPHOON_AT=nowClock(); whenIdle(function(){ renderTyphoonLine(); }); }
     }
     cb(ok);
   });
+}
+/* 单个台风的展示名。
+   中国气象局的列表里，尚未命名的系统其 cn 字段可能是空串或占位内容，
+   因此只接受含中文的名字；否则退回用编号，避免显示出"毒毙"这类无意义名称。 */
+function typhoonLabel(t){
+  var cn=String(t.cn||""), num=String(t.num||""), lv=t.level||"编号中";
+  var nm=(/[\u4e00-\u9fa5]/.test(cn))?cn:((num)?num+"号":"");
+  if(nm && lv && lv!=="编号中") return nm+"（"+lv+"）";
+  return nm||"新台风";
 }
 /* 台风提示文案；无台风返回空串 */
 function typhoonText(){
   if(!TYPHOONS.length) return "";
   var a=[], i;
-  for(i=0;i<TYPHOONS.length;i++){ a.push(TYPHOONS[i].cn+"（"+TYPHOONS[i].num+"·"+TYPHOONS[i].level+"）"); }
+  for(i=0;i<TYPHOONS.length;i++){ a.push(typhoonLabel(TYPHOONS[i])); }
   return a.join("、");
 }
+/* 渲染独立的台风预警行：正常天气信息不再被覆盖 */
+function renderTyphoonLine(){
+  var el=document.getElementById("tyLine");
+  if(!el) return;
+  var t=typhoonText();
+  if(!t){ el.style.display="none"; el.innerHTML=""; return; }
+  el.innerHTML="<span class='tyBox' title='⚠ 台风："+escHtml(t)+"'>⚠ 台风 "+escHtml(t)+"</span>";
+  el.style.display="block";
+}
+/* ============================================================
+   窗口尺寸自适应
+   ------------------------------------------------------------
+   设计基准固定为 430 x 660（BASE_W/BASE_H），窗口可由用户自由拉伸。
+   每次窗口变化时按 min(窗口宽/430, 窗口高/660) 算出缩放系数，
+   用 zoom 作用于 #stage 实现整体等比缩放，再在 #app 内居中，
+   因此字体、按钮、月相图标、表格行高等会随窗口同步放大缩小，
+   在任意分辨率、任意 DPI、跨屏拖动时观感都保持一致。
+   ============================================================ */
+var BASE_W=430, BASE_H=660;
+var WIN_TOP=30;
+var stageEl=null, appEl=null;
+var layoutTimer=0;
+function layoutStage(){
+  if(!stageEl) stageEl=document.getElementById("stage");
+  if(!appEl)   appEl=document.getElementById("app");
+  if(!stageEl||!appEl) return;
+  var aw=appEl.clientWidth||appEl.offsetWidth||BASE_W;
+  var ah=appEl.clientHeight||appEl.offsetHeight||BASE_H;
+  var s=Math.min(aw/BASE_W, ah/BASE_H);
+  /* 夹取范围而非回退到 1：窗口极小时按比例缩到 0.35 仍保持布局正确（仅内容被裁切），
+     极大时封顶 3 倍，避免高分屏下被放大得过于夸张。
+     这里只改 zoom、不调 resizeTo，避免在 onresize 中反向触发窗口调整形成死循环。 */
+  s=Math.max(0.35, Math.min(3, s));
+  try{ stageEl.style.zoom=s; }catch(e){}
+  /* zoom 缩放的是布局尺寸，居中需按缩放后的实际尺寸算 */
+  var w=BASE_W*s, h=BASE_H*s;
+  stageEl.style.left=Math.max(0,Math.round((aw-w)/2))+"px";
+  stageEl.style.top=Math.max(0,Math.round((ah-h)/2))+"px";
+}
+function onWinResize(){
+  try{ if(layoutTimer) clearTimeout(layoutTimer); }catch(e){}
+  layoutTimer=setTimeout(layoutStage,60);
+}
+/* 仅用于决定「初始」窗口大小：屏幕装不下基准尺寸时先缩小一点，
+   之后用户随意拉伸，内容由 layoutStage() 的 zoom 负责适配。 */
+function initScale(){
+  var aw=0, ah=0;
+  try{ aw=screen.availWidth||0; ah=screen.availHeight||0; }catch(e){}
+  if(!aw||!ah) return 1;
+  var s=1;
+  if(aw < BASE_W+12) s=Math.min(s, aw/(BASE_W+12));
+  if(ah < BASE_H+40) s=Math.min(s, ah/(BASE_H+40));
+  if(s>=1) return 1;
+  return Math.max(0.6, Math.round(s*100)/100);
+}
+/* 立即把当前窗口大小与位置写入配置 */
+function writeWindowSize(){
+  try{
+    var w=window.outerWidth||0, h=window.outerHeight||0;
+    var x=window.screenLeft||0, y=window.screenTop||0;
+    if(w>=RZ_MIN_W && h>=RZ_MIN_H && w<=RZ_MAX_W && h<=RZ_MAX_H){
+      if(cfg.winW!==w||cfg.winH!==h||cfg.winX!==x||cfg.winY!==y){
+        cfg.winW=w; cfg.winH=h; cfg.winX=x; cfg.winY=y;
+        saveCfg();
+      }
+    }
+  }catch(e){}
+}
+/* 窗口尺寸变化后写盘（去抖）：拖动过程中 resizeEnd 会被反复触发，
+   每次都写文件会显著拖慢 IO，因此延后 600ms 只写最后一次结果。 */
+var saveWinTimer=0;
+function saveWindowSize(){
+  try{ if(saveWinTimer) clearTimeout(saveWinTimer); }catch(e){}
+  saveWinTimer=setTimeout(function(){
+    saveWinTimer=0;
+    writeWindowSize();
+  },600);
+}
+function flushWindowSize(){
+  if(!saveWinTimer) return;
+  try{ clearTimeout(saveWinTimer); }catch(e){}
+  saveWinTimer=0;
+  writeWindowSize();   /* 退出前把还没落盘的尺寸补写，避免"调完就关"丢失 */
+}
+/* 仅用于决定初始窗口位置，避免窗口落在屏幕外 */
+function centerWindow(w,h){
+  var x=Math.round((screen.availWidth-w)/2), y=Math.round((screen.availHeight-h)/2);
+  if(y<0) y=0;
+  try{ window.moveTo(x,y); }catch(e){}
+}
+/* 把窗口位置收进当前屏幕可见范围内。
+   多显示器时 screenLeft/screenTop 可以为负，若原来放在已拔掉的扩展屏上，
+   不夹一下窗口就会开在看不见的地方。 */
+function clampWinPos(x,y,w,h){
+  var aw=screen.availWidth, ah=screen.availHeight;
+  if(!aw||!ah) return [x,y];
+  if(typeof x!=="number"||isNaN(x)) x=0;
+  if(typeof y!=="number"||isNaN(y)) y=0;
+  if(x>aw-60) x=Math.max(0,aw-w-20);
+  if(x<60-w) x=20;
+  if(y>ah-40) y=Math.max(0,ah-80);
+  if(y<0) y=0;
+  return [x,y];
+}
+/* 恢复上次退出时的窗口大小与位置；没有存档时按设计基准放到右上角。 */
+function applySavedWindow(){
+  var S=initScale();
+  var fw=cfg.winW||0, fh=cfg.winH||0;
+  var hasSize=(fw>=RZ_MIN_W && fw<=RZ_MAX_W && fh>=RZ_MIN_H && fh<=RZ_MAX_H);
+  var x,y;
+  if(hasSize){
+    x=(cfg.winX||0); y=(cfg.winY||0);
+  }else{
+    fw=Math.round(BASE_W*S); fh=Math.round(BASE_H*S);
+    x=screen.availWidth-Math.round(460*S); y=Math.round(WIN_TOP*S);
+  }
+  var p=clampWinPos(x,y,fw,fh); x=p[0]; y=p[1];
+  try{ window.resizeTo(fw,fh); }catch(e){}
+  try{ window.moveTo(x,y); }catch(e){}
+  layoutStage();
+  if(!hasSize) return;
+  /* window.onload 阶段窗口可能尚未完全就绪，resizeTo 有时会被系统忽略。
+     延后再核验一次，若尺寸仍不符则重设，避免"存了却没恢复"。 */
+  defer(function(){
+    try{
+      var cw=window.outerWidth||0, ch=window.outerHeight||0;
+      if(cw>0 && ch>0 && (Math.abs(cw-fw)>2 || Math.abs(ch-fh)>2)){
+        var q=clampWinPos(x,y,fw,fh);
+        window.resizeTo(fw,fh);
+        window.moveTo(q[0],q[1]);
+      }
+    }catch(e){}
+    layoutStage();
+  },260);
+}
 function initApp(){
-  try{ window.resizeTo(430,660); }catch(e){}
-  try{ window.moveTo(screen.availWidth-460,30); }catch(e){}
+  /* 必须先 loadCfg 再决定窗口尺寸与位置：
+     存档里的 winW/winH/winX/winY 要在这里才可用，否则读到的是初始值 0，
+     恢复分支永远进不去。 */
   loadCfg();
+  applySavedWindow();
+  /* 只监听 onresize。
+   早期还监听了 window.onmove，想在跨屏拖动时重算缩放，但 onmove 在拖动过程中
+   每帧都触发，而 layoutStage() 会做 zoom 重算 + 整个日历重新排版，
+   等于每帧全量重排一次——这就是"拖动窗口很卡"的根因。
+   移动窗口不改变客户区尺寸，缩放系数无需重算，故完全不监听 onmove。 */
+try{ window.onresize=onWinResize; }catch(e){}
+  try{ fixAutostartPath(); }catch(e9){}   /* 程序移盘后自动修正启动项路径 */
   bindDrag();
+  bindResize();
+  bindKeys();
   bindPoster();
   bindToast();
   bindMarquee();
@@ -2670,7 +3218,7 @@ function initApp(){
   myLoad();
   schoolLoad();
   holInit(); holLoad();
-  document.getElementById("btnClose").onclick=function(){ window.close(); };
+  document.getElementById("btnClose").onclick=closeApp;
   document.getElementById("btnSettings").onclick=function(){
     var sel=document.getElementById("cfgCity");
     if(!sel.options.length){
@@ -2689,8 +3237,10 @@ function initApp(){
     updateSchoolRow();
     renderSchList();
     renderMfList();
+    mfDateHelp();
     document.getElementById("holTip").innerHTML=
-      "放假调休安排来自国务院办公厅通知，可联网自动同步。<br>"+escHtml(holStatusText());
+      escHtml(holStatusText()+"　"+schoolStatusText())
+      +"<br>调休来自国务院办公厅通知，深圳校历来自市教育局发文；两者每天首次运行时自动同步。";
     document.getElementById("settings").style.display="block";
   };
   document.getElementById("cfgSave").onclick=function(){
@@ -2713,7 +3263,9 @@ function initApp(){
       cfg.code=cityMap[city].code;
       cfg.lat=cityMap[city].lat;
       cfg.lng=cityMap[city].lng;
-      lastWeather=null; weatherFailed=false; live=null;
+      /* 重置全部天气缓存，否则新城市名会配旧城市的天气/实况/AQI，
+         出现"北京 多云"却显示广州温度的串城市错误 */
+      lastWeather=null; weatherFailed=false; live=null; lastOfficialType="";
       fetchWeather(true); fetchLive();
     }
     /* 每周起始日与城市无关，单独设置并始终落盘 */
@@ -2726,24 +3278,42 @@ function initApp(){
   document.getElementById("cfgCancel").onclick=function(){
     document.getElementById("settings").style.display="none";
   };
-  document.getElementById("holSync").onclick=function(){
-    var btn=this, tip=document.getElementById("holTip");
-    btn.disabled=true; tip.innerHTML="正在同步国务院放假调休安排…";
-    syncHolidays(true,function(st,updated){
-      btn.disabled=false;
-      tip.innerHTML=(updated?("已更新 "+updated+" 个年度"):"未获取到更新（可能尚未公布或无网络）")
-        +"　当前："+holStatusText();
-      redrawCurrent();
-    });
+  document.getElementById("setClose").onclick=function(){
+    document.getElementById("settings").style.display="none";
   };
-  document.getElementById("schSync").onclick=function(){
-    var btn=this, tip=document.getElementById("schTip");
-    btn.disabled=true; tip.innerHTML="正在检查校历数据…";
-    syncSchool(true,function(st){
-      btn.disabled=false;
-      updateSchoolRow();
-      tip.innerHTML=(st=="synced"?"校历已更新。\n":"暂无可用远程校历数据源，已使用内置数据。\n")+schoolStatusText();
-      redrawCurrent();
+  /* 点击面板之外的区域也可关闭，符合"点外面收起"的直觉。
+     注意：bindDrag() 已占用 document.onmousedown，直接赋值会被覆盖，
+     故用 attachEvent 追加监听（IE5+ 支持），互不干扰。 */
+  var panel=document.getElementById("settings");
+  var outsideDown=function(){
+    if(panel.style.display==="none") return;
+    var e=window.event, t=e.srcElement;
+    if(!t) return;
+    var p=t;
+    while(p){
+      if(p.id==="settings"||p.id==="btnSettings") return;
+      p=p.parentNode;
+    }
+    panel.style.display="none";
+  };
+  try{ document.attachEvent("onmousedown",outsideDown); }catch(e10){}
+  /* 调休与校历都已每日自动同步，这里只提供一个"立刻再取一次"的入口，
+     放在提示行里做成链接，不与主要按钮抢注意力。 */
+  document.getElementById("syncLink").onclick=function(){
+    var link=this, tip=document.getElementById("holTip");
+    if(link.className.indexOf("disabled")>=0) return;
+    link.className="syncLink disabled"; link.innerHTML="正在更新…";
+    var done=0;
+    syncHolidays(true,function(st,updated){
+      if(updated) done++;
+      syncSchool(true,function(st2){
+        if(st2=="synced") done++;
+        link.className="syncLink"; link.innerHTML="立即更新假期数据（调休 + 校历）";
+        tip.innerHTML=(done?("已更新 "+done+" 项"):"未获取到更新（可能尚未公布或无网络）")
+          +"　当前："+holStatusText()+"　"+schoolStatusText();
+        updateSchoolRow();
+        redrawCurrent();
+      });
     });
   };
   document.getElementById("prevBtn").onclick=function(){ inMonthView?shiftMonth(-1):shiftDay(-1); };
@@ -2752,6 +3322,9 @@ function initApp(){
   document.getElementById("toggleBtn").onclick=function(){ showView(!inMonthView); };
   document.getElementById("prevYear").onclick=function(){ shiftMonth(-12); };
   document.getElementById("nextYear").onclick=function(){ shiftMonth(12); };
+  /* 万年历 -> 每日黄历。放在月视图表头内，常驻可见：
+     底部导航条会浮动收起且按钮多时易被裁掉，这里才是可靠的返回入口。 */
+  document.getElementById("mBackBtn").onclick=function(){ showView(false); };
   document.getElementById("prevMonth").onclick=function(){ shiftMonth(-1); };
   document.getElementById("nextMonth").onclick=function(){ shiftMonth(1); };
   document.getElementById("calBody").onclick=function(){
@@ -2769,9 +3342,9 @@ function initApp(){
   defer(function(){ fetchLive(); }, 2500);
   /* 调休安排：启动后延迟同步（避开 onload 阶段的请求限制），之后每天复查一次 */
   defer(function(){ syncHolidays(false, function(st,updated){ if(updated) redrawCurrent(); }); }, 1200);
-  setInterval(tick,30000);
+  tickTimer=setInterval(tick,30000);
 }
-
+try{ window.onbeforeunload=cleanupAll; }catch(e){}
 if(typeof window!="undefined"){ window.onload=initApp; }
 //__HL_END__
 </script>
