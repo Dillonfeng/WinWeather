@@ -974,9 +974,8 @@ function schoolSeedDefaults(){
 var SCHOOL_SEED=schoolSeedDefaults();
 function ymdKey(dt){ return dt.getFullYear()+"-"+("0"+(dt.getMonth()+1)).slice(-2)+"-"+("0"+dt.getDate()).slice(-2); }
 /* 把每个假期的起止区间逐日展开成 {城市:{"YYYY-MM-DD":名称}}
-   sparse=true（寒假/暑假这类长假期）只标首尾两天，且分别写成"××开始"/"××结束"，
-   避免同一天都显示"寒假"造成误解（看起来像假期中间日）。
-   非 sparse（秋假/春假等短假）逐日显示名称。 */
+   春秋假等短假逐日显示名称；寒假/暑假这类长假期 sparse=true 只标首尾两天，
+   分别写成"××开始"/"××结束"，避免整个月都是同一行"寒假"造成视觉淹没。 */
 function expandSchoolMap(){
   var map={}, i, j, t, cur, end, rec, sameDay;
   for(i=0;i<SCHOOL_SEED.length;i++){
@@ -1007,6 +1006,10 @@ function expandSchoolMap(){
 var SCHOOL_MAP=expandSchoolMap();
 function schoolSeedOf(city){
   for(var i=0;i<SCHOOL_SEED.length;i++){ if(SCHOOL_SEED[i].city===city) return SCHOOL_SEED[i]; }
+  /* 区级城市（如"深圳南山"）归属到市级校历（"深圳"） */
+  for(var j=0;j<SCHOOL_SEED.length;j++){
+    if(city && city.length>SCHOOL_SEED[j].city.length && city.indexOf(SCHOOL_SEED[j].city+"")===0) return SCHOOL_SEED[j];
+  }
   return null;
 }
 /* 内置数据覆盖到的最后一天；早于今天即视为可能过期 */
@@ -1074,7 +1077,9 @@ function schoolParseRemote(txt){
 /* 仅在"城市有数据 且 用户开启显示"时返回该日学校假期名，否则 null */
 function schoolDay(y,m,d){
   if(!cfg.showSchool) return null;
-  var rec=SCHOOL_MAP[cfg.city];
+  var seed=schoolSeedOf(cfg.city);
+  if(!seed) return null;
+  var rec=SCHOOL_MAP[seed.city];
   if(!rec) return null;
   return rec[ymdKey(new Date(y,m-1,d))]||null;
 }
@@ -1087,7 +1092,7 @@ function schoolStatusText(){
 /* 春秋假/寒暑假目前只有深圳数据，其他城市隐藏该设置行并说明原因 */
 function updateSchoolRow(){
   var row=document.getElementById("schRow"), tip=document.getElementById("schTip");
-  var has=!!SCHOOL_MAP[cfg.city];
+  var has=!!schoolSeedOf(cfg.city);
   if(row) row.style.display=has?"":"none";
   if(!tip) return;
   if(!has){ tip.innerHTML=""; return; }
@@ -1519,7 +1524,7 @@ function parseLiveText(t){
   };
 }
 function fetchLive(){
-  var url="http://wttr.in/"+encodeURIComponent(cfg.city)+"?format=j1";
+  var url="http://wttr.in/"+encodeURIComponent(baseCityOf(cfg.city))+"?format=j1";
   var xhr=null;
   try{ xhr=regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){ return; }
   if(!xhr) return;
@@ -1554,6 +1559,9 @@ var cityMap={
      深圳跨区较广，区级数据比全市代表站更贴近实际（尤其南山与罗湖天气常不同）。
      坐标为南山区中心，用于日出日落的天文计算。 */
   "深圳南山":{code:"101280604",lat:22.5331,lng:113.9308},
+  /* 龙岗区：sojson 未收录龙岗的区级编码（101280606 返回 403），
+     天气沿用深圳市站 101280601；坐标为龙岗中心，用于日出日落计算。 */
+  "深圳龙岗":{code:"101280601",lat:22.7207,lng:114.2469},
   "广州":{code:"101280101",lat:23.1291,lng:113.2644},
   "杭州":{code:"101210101",lat:30.2741,lng:120.1551},
   "成都":{code:"101270101",lat:30.5728,lng:104.0668},
@@ -1654,7 +1662,7 @@ function appFolder(){
 }
 function parseCfgText(s){
   var c={}, m;
-  m=/"city"\s*:\s*"([^"]*)"/.exec(s);       if(m) c.city=m[1];
+  m=/"city"\s*:\s*"([^"]*)"/.exec(s);       if(m) c.city=ascUnescape(m[1]);
   m=/"lat"\s*:\s*(-?[0-9.]+)/.exec(s);      if(m) c.lat=parseFloat(m[1]);
   m=/"lng"\s*:\s*(-?[0-9.]+)/.exec(s);      if(m) c.lng=parseFloat(m[1]);
   m=/"code"\s*:\s*"([^"]*)"/.exec(s);       if(m) c.code=m[1];
@@ -1700,8 +1708,15 @@ function loadCfg(){
        因此其余字段必须在替换前取出、替换后回填。 */
     if(c.code){
       var byCode=codeToCity(c.code);
-      if(byCode) c=byCode;
-      else c={city:(c.city||"北京"), code:c.code, lat:c.lat, lng:c.lng};
+      /* 存了区级城市且编码一致时（如"深圳龙岗"与"深圳"共用 101280601），
+         按区级城市恢复，避免被编码反查降级成市级 */
+      if(c.city && cityMap[c.city] && cityMap[c.city].code==c.code){
+        c={city:c.city, code:c.code, lat:cityMap[c.city].lat, lng:cityMap[c.city].lng};
+      }else if(byCode){
+        c=byCode;
+      }else{
+        c={city:(c.city||"北京"), code:c.code, lat:c.lat, lng:c.lng};
+      }
     }else if(c.city && cityMap[c.city]){
       c={city:c.city, code:cityMap[c.city].code, lat:cityMap[c.city].lat, lng:cityMap[c.city].lng};
     }else{
@@ -1709,8 +1724,8 @@ function loadCfg(){
     }
     cfg=c;
     cfg.weekStart=ws;
-    /* 老配置缺该字段时：深圳默认开启春秋假，其他城市默认关闭 */
-    cfg.showSchool=(shRaw===undefined)?((cfg.city==="深圳")?1:0):(shRaw===1?1:0);
+    /* 老配置缺该字段时：城市有校历数据（含区级归属）则默认开启，否则关闭 */
+    cfg.showSchool=(shRaw===undefined)?(schoolSeedOf(cfg.city)?1:0):(shRaw===1?1:0);
     /* 上次退出时的窗口大小与位置；0 表示从未调整过，启动时用设计基准 */
     cfg.winW=winW;
     cfg.winH=winH;
@@ -1728,7 +1743,7 @@ function saveCfg(){
     var f=fso.CreateTextFile(folder+"\\huangli_cfg.json",true);
     var win=(cfg.winW>0 && cfg.winH>0)?(',"winW":'+cfg.winW+',"winH":'+cfg.winH+',"winX":'+cfg.winX+',"winY":'+cfg.winY):"";
   win+=',"geoDone":'+(cfg.geoDone===1?1:0);
-    f.Write('{"code":"'+cfg.code+'","lat":'+cfg.lat+',"lng":'+cfg.lng+',"weekStart":'+(cfg.weekStart===0?0:1)+',"showSchool":'+(cfg.showSchool===1?1:0)+win+'}\r\n');
+    f.Write('{"city":"'+ascEscape(cfg.city)+'","code":"'+cfg.code+'","lat":'+cfg.lat+',"lng":'+cfg.lng+',"weekStart":'+(cfg.weekStart===0?0:1)+',"showSchool":'+(cfg.showSchool===1?1:0)+win+'}\r\n');
     f.Close();
   }catch(e){}
 }
@@ -2601,15 +2616,48 @@ function cleanupAll(){
    启动自动定位（续）
    ------------------------------------------------------------
    目的：用户换地方、或别人拿到程序直接用，都不需要手动选城市。
-   做法：启动时做一次 IP 定位（免密钥、明文 HTTP 可用），
-        拿到经纬度后，在 cityMap 里找坐标最近的一个城市作为结果，
-        而不是去匹配接口返回的行政区名称——各家接口的
-        city/region 字段写法差异极大（实测ip-api.com 对深圳返回的是
-        "Keji yuan" 这种街道名），用坐标最稳妥。
+   三级定位，全部免密钥、尽量明文 HTTP 可用，按优先级依次尝试：
+   ① Windows 定位服务（WiFi/GPS，通过 PowerShell 调 WinRT Geolocator，
+      精度最高可到区县；前提是系统「位置」开关已开启。实测本机
+      WiFi 定位返回 22.63°N,114.12°E、精度约 114 米，即龙岗布吉一带）
+   ② ipip.net 的 IP 库：返回「省/市/区/运营商」结构文本，国内库较准，
+      按城市名匹配 cityMap（实测本机判为「广东 深圳」，ip-api 却误判广州）
+   ③ ip-api.com 经纬度：在 cityMap 中按 Haversine 距离取最近城市（兜底）
    只在「从未成功定位过」时执行一次并把结果落盘，之后启动不再联网查询；
    失败则标记未完成，下次启动自动重试。设置面板可手动「重新定位」。
    ============================================================ */
-var GEO_URL="http://ip-api.com/json/?lang=zh-CN";
+var GEO_URL_IPAPI="http://ip-api.com/json/?lang=zh-CN";
+var GEO_URL_IPIP="http://myip.ipip.net/json";
+/* Windows 定位辅助脚本（hl_geoloc.ps1，由本程序在定位时生成到同目录再运行）。
+   把经纬度与精度写进指定输出文件，纯 ASCII，避免系统代码页的中文乱码；
+   内容全部来自程序自身，不含任何外部输入，无注入风险。 */
+var GEOLOC_PS1=
+"$ErrorActionPreference='Stop'\r\n"+
+"function Esc($s){ if($null -eq $s){return ''}; $sb=New-Object System.Text.StringBuilder; foreach($ch in $s.ToString().ToCharArray()){ $cc=[int]$ch; if($cc -lt 128){[void]$sb.Append($ch)}else{[void]$sb.AppendFormat('\\u{0:X4}',$cc)} }; $sb.ToString() }\r\n"+
+"try{\r\n"+
+"  Add-Type -AssemblyName System.Runtime.WindowsRuntime | Out-Null\r\n"+
+"  $null=[Windows.Devices.Geolocation.Geolocator,Windows.Devices.Geolocation,ContentType=WindowsRuntime]\r\n"+
+"  $null=[Windows.Devices.Geolocation.Geoposition,Windows.Devices.Geolocation,ContentType=WindowsRuntime]\r\n"+
+"  $m=([System.WindowsRuntimeSystemExtensions].GetMethods()|Where-Object{$_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'})[0]\r\n"+
+"  function Await($t,$rt){ $a=$m.MakeGenericMethod($rt); $n=$a.Invoke($null,@($t)); if(-not $n.Wait(12000)){ throw 'timeout' }; $n.Result }\r\n"+
+"  $l=New-Object Windows.Devices.Geolocation.Geolocator\r\n"+
+"  $p=Await ($l.GetGeopositionAsync()) ([Windows.Devices.Geolocation.Geoposition])\r\n"+
+"  $c=$p.Coordinate.Point.Position\r\n"+
+"  $out=('{0},{1},{2}' -f $c.Latitude,$c.Longitude,$p.Coordinate.Accuracy)\r\n"+
+"  try{\r\n"+
+"    [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12\r\n"+
+"    $uri='https://photon.komoot.io/reverse?lat='+$c.Latitude+'&lon='+$c.Longitude+'&limit=1'\r\n"+
+"    $req=[Net.HttpWebRequest]::Create($uri)\r\n"+
+"    $req.Timeout=8000; $req.UserAgent='Mozilla/5.0'\r\n"+
+"    $resp=$req.GetResponse()\r\n"+
+"    $sr=New-Object IO.StreamReader($resp.GetResponseStream(),[Text.Encoding]::UTF8)\r\n"+
+"    $txt=$sr.ReadToEnd(); $sr.Close(); $resp.Close()\r\n"+
+"    $g=$txt|ConvertFrom-Json\r\n"+
+"    $pr=$g.features[0].properties\r\n"+
+"    $out=$out+','+(Esc $pr.city)+','+(Esc $pr.district)\r\n"+
+"  }catch{}\r\n"+
+"  [IO.File]::WriteAllText($args[0],$out)\r\n"+
+"}catch{}\r\n";
 function geoDist(lat1,lng1,lat2,lng2){
   var r=6371, dr=(lat2-lat1)*Math.PI/180, dl=(lng2-lng1)*Math.PI/180;
   var a=Math.sin(dr/2)*Math.sin(dr/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dl/2)*Math.sin(dl/2);
@@ -2627,28 +2675,135 @@ function nearestCity(lat,lng,limitKm){
   if(!best || bd>(limitKm||300)) return null;
   return {city:best, km:bd};
 }
-/* 执行定位。cb(ok, cityName, info) */
-function geoDetect(cb){
-  cb=cb||function(){};
-  var xhr=null;
-  try{ xhr=regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){
-    try{ xhr=regXhr(new ActiveXObject("Msxml2.XMLHTTP.6.0")); }catch(e2){
-      try{ xhr=regXhr(new XMLHttpRequest()); }catch(e3){ xhr=null; }
+/* 逆地理返回的街道名 → 区（区名不含"区"字）。覆盖深圳全部街道，
+   其它城市街道不在此表时按"××区"直接识别（去掉"区"字）。 */
+var SZ_DISTRICT={"\u9F99\u5C97":"\u9F99\u5C97","\u9F99\u57CE":"\u9F99\u5C97","\u5E03\u5409":"\u9F99\u5C97","\u5357\u6E7E":"\u9F99\u5C97","\u5742\u7530":"\u9F99\u5C97","\u6A2A\u5C97":"\u9F99\u5C97","\u5E73\u6E56":"\u9F99\u5C97","\u576A\u5730":"\u9F99\u5C97","\u5409\u534E":"\u9F99\u5C97","\u56ED\u5C71":"\u9F99\u5C97","\u5B9D\u9F99":"\u9F99\u5C97","\u5357\u5934":"\u5357\u5C71","\u5357\u5C71":"\u5357\u5C71","\u6C99\u6CB3":"\u5357\u5C71","\u86C7\u53E3":"\u5357\u5C71","\u62DB\u5546":"\u5357\u5C71","\u7CA4\u6D77":"\u5357\u5C71","\u6843\u6E90":"\u5357\u5C71","\u897F\u4E3D":"\u5357\u5C71","\u56ED\u5CAD":"\u798F\u7530","\u5357\u56ED":"\u798F\u7530","\u798F\u7530":"\u798F\u7530","\u6C99\u5934":"\u798F\u7530","\u6885\u6797":"\u798F\u7530","\u534E\u5F3A\u5317":"\u798F\u7530","\u9999\u871C\u6E56":"\u798F\u7530","\u83B2\u82B1":"\u798F\u7530","\u534E\u5BCC":"\u798F\u7530","\u798F\u4FDD":"\u798F\u7530","\u9EC4\u8D1D":"\u7F57\u6E56","\u4E1C\u95E8":"\u7F57\u6E56","\u5357\u6E56":"\u7F57\u6E56","\u6842\u56ED":"\u7F57\u6E56","\u7B0B\u5C97":"\u7F57\u6E56","\u6E05\u6C34\u6CB3":"\u7F57\u6E56","\u7FE0\u7AF9":"\u7F57\u6E56","\u4E1C\u6E56":"\u7F57\u6E56","\u4E1C\u6653":"\u7F57\u6E56","\u83B2\u5858":"\u7F57\u6E56","\u65B0\u5B89":"\u5B9D\u5B89","\u897F\u4E61":"\u5B9D\u5B89","\u822A\u57CE":"\u5B9D\u5B89","\u798F\u6C38":"\u5B9D\u5B89","\u798F\u6D77":"\u5B9D\u5B89","\u6C99\u4E95":"\u5B9D\u5B89","\u65B0\u6865":"\u5B9D\u5B89","\u677E\u5C97":"\u5B9D\u5B89","\u71D5\u7F57":"\u5B9D\u5B89","\u77F3\u5CA9":"\u5B9D\u5B89","\u6D77\u5C71":"\u76D0\u7530","\u6885\u6C99":"\u76D0\u7530","\u6C99\u5934\u89D2":"\u76D0\u7530","\u76D0\u7530":"\u76D0\u7530","\u9F99\u534E":"\u9F99\u534E","\u6C11\u6CBB":"\u9F99\u534E","\u5927\u6D6A":"\u9F99\u534E","\u89C2\u6F9C":"\u9F99\u534E","\u89C2\u6E56":"\u9F99\u534E","\u798F\u57CE":"\u9F99\u534E","\u576A\u5C71":"\u576A\u5C71","\u5751\u6893":"\u576A\u5C71","\u9F99\u7530":"\u576A\u5C71","\u77F3\u4E95":"\u576A\u5C71","\u9A6C\u5CE6":"\u576A\u5C71","\u78A7\u5CAD":"\u576A\u5C71","\u5149\u660E":"\u5149\u660E","\u516C\u660E":"\u5149\u660E","\u65B0\u6E56":"\u5149\u660E","\u51E4\u51F0":"\u5149\u660E","\u7389\u5858":"\u5149\u660E","\u9A6C\u7530":"\u5149\u660E","\u5927\u9E4F":"\u5927\u9E4F","\u5357\u6FB3":"\u5927\u9E4F","\u8475\u6D8C":"\u5927\u9E4F"};
+/* 逆地理返回的城市名（如"深圳市"）归一为程序内的城市名（"深圳"） */
+function cityNameOf(s){
+  s=String(s||"").replace(/\s+/g,"");
+  if(!s) return null;
+  if(s.length>2 && s.charAt(s.length-1)==="\u5e02") s=s.slice(0,-1);
+  return s||null;
+}
+/* 区级城市（如"深圳龙岗"）回退为市级名（"深圳"），供 wttr.in 等按市级查询；
+   找不到更短的前缀城市时原样返回（北京/上海等无区级条目的城市不受影响） */
+function baseCityOf(c){
+  c=String(c||"");
+  var b="", k;
+  for(k in cityMap){
+    if(!Object.prototype.hasOwnProperty.call(cityMap,k)) continue;
+    if(k.length<c.length && c.indexOf(k)===0 && k.length>b.length) b=k;
+  }
+  return b||c;
+}
+/* 街道/区名 → 区（不含"区"字）；无法确定时返回 null */
+function districtOf(d){
+  d=String(d||"").replace(/\s+/g,"");
+  if(!d) return null;
+  if(SZ_DISTRICT[d]) return SZ_DISTRICT[d];
+  if(d.length>2 && d.slice(-2)==="\u8857\u9053") d=d.slice(0,-2);
+  if(SZ_DISTRICT[d]) return SZ_DISTRICT[d];
+  if(d.length>1 && d.charAt(d.length-1)==="\u533a") return d.slice(0,-1);
+  return null;
+}
+/* 创建一个受 regXhr 管理的 XHR（退出时统一中止） */
+function geoNewXhr(){
+  try{ return regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){
+    try{ return regXhr(new ActiveXObject("Msxml2.XMLHTTP.6.0")); }catch(e2){
+      try{ return regXhr(new XMLHttpRequest()); }catch(e3){ return null; }
     }
   }
+}
+/* ① Windows 定位服务（WiFi/GPS）。cb(ok, lat, lng, info) */
+function geoWinLocation(cb){
+  cb=cb||function(){};
+  var s=shellObj(), fso=fsoObj();
+  if(!s || !fso){ cb(false,0,0,null); return; }
+  var folder=appFolder()||".";
+  var psFile=folder+"\\hl_geoloc.ps1", outFile=folder+"\\hl_geo.txt";
+  try{
+    var f=fso.CreateTextFile(psFile,true);
+    f.Write(GEOLOC_PS1); f.Close();
+    try{ if(fso.FileExists(outFile)) fso.DeleteFile(outFile); }catch(e1){}
+  }catch(e){ cb(false,0,0,null); return; }
+  var pw="C:\\Windows";
+  try{ pw=s.ExpandEnvironmentStrings("%SystemRoot%")||pw; }catch(e2){}
+  var cmd='"'+pw+'\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "'+psFile+'" "'+outFile+'"';
+  try{ s.Run(cmd,0,false); }catch(e){ cb(false,0,0,null); return; }
+  var waited=0;
+  function poll(){
+    if(waited>18000){ cb(false,0,0,null); return; }
+    waited+=600;
+    try{
+      if(fsoObj() && fso.FileExists(outFile)){
+        var f2=fso.OpenTextFile(outFile,1), t=String(f2.ReadAll()||""); f2.Close();
+        try{ fso.DeleteFile(outFile); }catch(e3){}
+        var parts=String(t).split(","), pi;
+        for(pi=0;pi<parts.length;pi++){ parts[pi]=String(parts[pi]).replace(/^\s+|\s+$/g,""); }
+        if(parts.length>=3){
+          var la=parseFloat(parts[0]), lo=parseFloat(parts[1]);
+          if(!isNaN(la) && !isNaN(lo) && Math.abs(la)<=90 && Math.abs(lo)<=180){
+            cb(true,la,lo,{
+              acc:parseFloat(parts[2])||0,
+              city:parts[3]?ascUnescape(parts[3]):"",
+              district:parts[4]?ascUnescape(parts[4]):""
+            });
+            return;
+          }
+        }
+        cb(false,0,0,null); return;
+      }
+    }catch(e){ cb(false,0,0,null); return; }
+    setTimeout(poll,600);
+  }
+  poll();
+}
+/* ② ipip.net：{data:{location:["中国","广东","深圳","","移动"]}}，按城市名匹配 */
+function geoIpip(cb){
+  cb=cb||function(){};
+  var xhr=geoNewXhr();
   if(!xhr){ cb(false,"",null); return; }
   var done=false;
-  /* ok/city/info 三个参数要如实传给回调：
-     早前误写成 cb(ok,"",info)，导致回调拿到的城市名恒为空串，
-     applyGeoCity("") 直接返回，定位静默失败（界面仍显示原城市）。 */
-  function finish(ok,city,info){
-    if(done) return; done=true;
-    try{ xhr.abort(); }catch(e){}
-    cb(ok,city||"",info);
-  }
+  function finish(ok,city,info){ if(done) return; done=true; try{ xhr.abort(); }catch(e){} cb(ok,city||"",info); }
   try{
     try{ xhr.setTimeouts(12000,12000,12000,12000); }catch(e5){}
-    xhr.open("GET",GEO_URL,true);
+    xhr.open("GET",GEO_URL_IPIP,true);
+    xhr.onreadystatechange=function(){
+      if(xhr.readyState!=4) return;
+      if(xhr.status!=200){ finish(false,"",null); return; }
+      var city="";
+      try{
+        var t=String(xhr.responseText||"");
+        var m=/\"location\"\s*:\s*\[\s*([^\]]*)\]/.exec(t);
+        if(m){
+          var parts=m[1].split(","), arr=[], i, p;
+          for(i=0;i<parts.length;i++){
+            p=String(parts[i]).replace(/^\s*\"\s*|\s*\"\s*$/g,"");
+            arr.push(p);
+          }
+          /* [国家, 省, 市, 区, 运营商]；直辖市无市一级，省即市 */
+          var prov=arr[1]||"", cty=arr[2]||"", dct=arr[3]||"";
+          city=String(cty||prov).replace(/市$/,"");
+          /* 区级有对应条目（如 深圳南山）时优先选用 */
+          if(dct && cityMap[city+dct]) city=city+dct;
+        }
+      }catch(e6){}
+      if(!city || !cityMap[city]){ finish(false,"",null); return; }
+      finish(true,city,{src:"ipip"});
+    };
+    xhr.send(null);
+  }catch(e){ finish(false,"",null); }
+}
+/* ③ ip-api.com：经纬度 + 最近城市（兜底） */
+function geoIpapi(cb){
+  cb=cb||function(){};
+  var xhr=geoNewXhr();
+  if(!xhr){ cb(false,"",null); return; }
+  var done=false;
+  function finish(ok,city,info){ if(done) return; done=true; try{ xhr.abort(); }catch(e){} cb(ok,city||"",info); }
+  try{
+    try{ xhr.setTimeouts(12000,12000,12000,12000); }catch(e5){}
+    xhr.open("GET",GEO_URL_IPAPI,true);
     xhr.onreadystatechange=function(){
       if(xhr.readyState!=4) return;
       if(xhr.status!=200){ finish(false,"",null); return; }
@@ -2663,10 +2818,42 @@ function geoDetect(cb){
       if(isNaN(lat)||isNaN(lng)||Math.abs(lat)>90||Math.abs(lng)>180){ finish(false,"",null); return; }
       var near=nearestCity(lat,lng,300);
       if(!near){ finish(false,"",null); return; }
-      finish(true,near.city,{lat:lat,lng:lng,km:near.km,raw:nm});
+      finish(true,near.city,{lat:lat,lng:lng,km:near.km,raw:nm,src:"ipapi"});
     };
     xhr.send(null);
   }catch(e){ finish(false,"",null); }
+}
+/* 执行定位：① Windows 定位 → ② ipip 城市名 → ③ ip-api 坐标。
+   cb(ok, cityName, info)；ok/city/info 三参数须如实传给回调，
+   早前误写成 cb(ok,"",info) 导致 applyGeoCity("") 直接返回、定位静默失败。 */
+function geoDetect(cb){
+  cb=cb||function(){};
+  var done=false;
+  function finish(ok,city,info){ if(done) return; done=true; cb(ok,city||"",info); }
+  geoWinLocation(function(ok,lat,lng,info){
+    if(ok){
+      var mc=null;
+      if(info && (info.city||info.district)){
+        var cty=cityNameOf(info.city), dct=districtOf(info.district);
+        if(cty){
+          if(dct && cityMap[cty+dct]){ mc=cty+dct; }
+          else if(cityMap[cty]){ mc=cty; }
+        }
+      }
+      if(!mc){
+        var near=nearestCity(lat,lng,80);
+        if(near) mc=near.city;
+      }
+      if(mc){ finish(true,mc,{lat:lat,lng:lng,km:0,acc:info?info.acc:0,src:"win"}); return; }
+    }
+    geoIpip(function(ok2,city2,info2){
+      if(ok2){ finish(true,city2,info2); return; }
+      geoIpapi(function(ok3,city3,info3){
+        if(ok3){ finish(true,city3,info3); return; }
+        finish(false,"",null);
+      });
+    });
+  });
 }
 /* 定位成功后应用城市并落盘 */
 function applyGeoCity(cityName){
@@ -2688,12 +2875,24 @@ function tryAutoGeo(silent){
   geoDetect(function(ok,cityName,info){
     var box=document.getElementById("geoRow");
     if(ok){
+      /* 已在更精确的区级城市（如"深圳龙岗"）时，不因兜底降级为市级（"深圳"） */
+      if(cfg.city && cityName && cityName.length<cfg.city.length && cfg.city.indexOf(cityName)===0){
+        cityName=cfg.city;
+      }
       var changed=(cityName!==cfg.city);
       applyGeoCity(cityName);
       if(!silent && tip){
-        tip.innerHTML="已定位到 <b>"+escHtml(cityName)+"</b>"
-          +(info&&info.km?("（距该点约 "+Math.round(info.km)+" 公里）"):"")
-          +(changed?"，天气已切换":"");
+        var dTxt="";
+        if(info){
+          if(info.src==="win"){
+            dTxt=(info.acc&&info.acc>0)?("（WiFi 定位，精度约 "+Math.round(info.acc)+" 米）"):"（Windows 定位）";
+          }else if(info.src==="ipip"){
+            dTxt="（IP 定位）";
+          }else if(info.km){
+            dTxt="（距该点约 "+Math.round(info.km)+" 公里）";
+          }
+        }
+        tip.innerHTML="已定位到 <b>"+escHtml(cityName)+"</b>"+dTxt+(changed?"，天气已切换":"");
       }
       whenIdle(function(){
         fetchWeather(true);
@@ -2703,7 +2902,7 @@ function tryAutoGeo(silent){
       });
     }else{
       /* 失败不写 geoDone，下次启动自动重试 */
-      if(!silent && tip) tip.innerHTML="<span style='color:#a8231a'>自动定位失败（可能无网络），可在下方手动选择城市</span>";
+      if(!silent && tip) tip.innerHTML="<span style='color:#a8231a'>自动定位失败（无网络或未开启 Windows 定位），可在下方手动选择城市</span>";
     }
   });
 }
@@ -3400,7 +3599,7 @@ try{ window.onresize=onWinResize; }catch(e){}
     }
     var city=document.getElementById("cfgCity").value;
     var ssel=document.getElementById("cfgSchool");
-    cfg.showSchool=(ssel&&ssel.value==="1" && SCHOOL_MAP[city])?1:0;
+    cfg.showSchool=(ssel&&ssel.value==="1" && schoolSeedOf(city))?1:0;
     if(city && cityMap[city]){
       cfg.city=city;
       cfg.code=cityMap[city].code;

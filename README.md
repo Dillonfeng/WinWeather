@@ -10,7 +10,7 @@
 mshta.exe "老黄历.hta"
 ```
 
-首次运行会在同目录生成 `holidays.txt`、`school.txt`、`myfest.txt`、`huangli_cfg.json` 与 `images/` 目录。
+首次运行会在同目录生成 `holidays.txt`、`school.txt`、`myfest.txt`、`huangli_cfg.json` 与 `images/` 目录；自动定位时临时生成 `hl_geoloc.ps1`（Windows 定位辅助脚本）与 `hl_geo.txt`（定位结果，读后即删）。
 
 ## 功能
 
@@ -30,7 +30,8 @@ mshta.exe "老黄历.hta"
 
 点右上角 ⚙ 打开：
 
-- **城市** —— 天气数据来源为中国气象局，国内可直连
+- **城市** —— 天气数据来源为中国气象局，国内可直连；首次启动自动定位
+- **定位** —— 三级定位：Windows 定位服务（WiFi/GPS）取坐标后经 photon 逆地理确认到区县（如「深圳龙岗」）→ ipip.net IP 库 → ip-api 坐标兜底；设置里可手动「重新定位」
 - **每周** —— 周一开头 / 周日开头
 - **开机** —— 登录后自动启动（写入 `HKCU Run`，无需管理员权限）
 - **学校** —— 深圳中小学寒暑假与春秋假
