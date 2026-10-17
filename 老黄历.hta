@@ -2434,7 +2434,7 @@ function fetchOfficialWx(){
   try{
     try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e5){}
     xhr.open("GET",url,true);
-    try{ xhr.setRequestHeader("User-Agent","Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1)"); }catch(e4){}
+    try{ xhr.setRequestHeader("User-Agent","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"); }catch(e4){}
     try{ xhr.setRequestHeader("Referer","http://www.weather.com.cn/weather/"+cfg.code+".shtml"); }catch(e6){}
     xhr.onreadystatechange=function(){
       if(xhr.readyState==4 && xhr.status==200){
@@ -2463,7 +2463,7 @@ function fetchWeather(force){
   try{
     try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e5){}
     xhr.open("GET",url,true);
-    try{ xhr.setRequestHeader("User-Agent","Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1)"); }catch(e4){}
+    try{ xhr.setRequestHeader("User-Agent","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"); }catch(e4){}
     xhr.onreadystatechange=function(){
       if(xhr.readyState==4){
         if(xhr.status==200){
