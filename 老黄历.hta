@@ -1519,6 +1519,15 @@ function parseLiveText(t){
   if(temp==null) return null;
   var code=gval(t,/"weatherCode"\s*:\s*"([^"]*)"/);
   var desc=gval(t,/"weatherDesc"\s*:\s*\[\s*\{\s*"value"\s*:\s*"([^"]*)"/);
+  /* 小时级紫外线：wttr weather 各日 hourly（本地时间 HH×100 + uvIndex 0-11），
+     取最接近当前小时的条目（官方无小时级紫外线，这是唯一免费小时源） */
+  var uvHour=null, hoursRe=/"time"\s*:\s*"(\d+)"\s*,\s*"uvIndex"\s*:\s*"(\d+)"/g, hm2=null, curHh=new Date().getHours(), bg2=999;
+  while((hm2=hoursRe.exec(t))!==null){
+    var hh2=parseInt(hm2[1],10)/100;
+    if(isNaN(hh2)||hh2<0||hh2>24) continue;
+    var gap2=Math.abs(hh2-curHh);
+    if(gap2<bg2){ bg2=gap2; uvHour={h:hh2, idx:parseInt(hm2[2],10)}; }
+  }
   return {
     temp:temp,
     feels:gval(t,/"FeelsLikeC"\s*:\s*"([^"]*)"/)||"",
@@ -1530,8 +1539,17 @@ function parseLiveText(t){
     type:(wmoCn(code)||""),
     desc:desc||"",
     max:gval(t,/"maxtempC"\s*:\s*"([^"]*)"/)||"",
-    min:gval(t,/"mintempC"\s*:\s*"([^"]*)"/)||""
+    min:gval(t,/"mintempC"\s*:\s*"([^"]*)"/)||"",
+    uvHour:uvHour
   };
+}
+/* 紫外线指数分级（WHO 通用标准，指数 0-11+） */
+function uvLevel(idx){
+  if(idx<=2) return "低";
+  if(idx<=5) return "中等";
+  if(idx<=7) return "高";
+  if(idx<=10) return "很高";
+  return "极高";
 }
 function fetchLive(){
   var url="http://wttr.in/"+encodeURIComponent(baseCityOf(cfg.city))+"?format=j1";
@@ -2128,17 +2146,33 @@ function renderWeatherLine(y,m,d){
     else if(offFc0&&offFc0.high) main=offFc0.high+"~"+offFc0.low+"°";
     else if(offToday&&offToday.temp) main=offToday.temp.replace("℃","")+"~"+offToday.tempn.replace("℃","")+"°";
     else if(fc) main=fc.low+"~"+fc.high+"°";
-    /* 紫外线指数显示在体感后面（官方 weather1d 生活指数，为当日等级）。
-       夜间不显示白天的"很强"等分级：官方指数按天发布、昼夜同值，
-       天已黑还报"很强"会误导，故夜间按"紫外线弱"显示（悬停注明官方当日等级）。 */
-    if(today && lv && lv.uv && lv.uv.level) main+=" 紫外线"+(isDaytime()?lv.uv.level:"弱");
+    /* 紫外线：小时级优先（wttr 当前小时 uvIndex，官方无小时级数据）；
+       夜间自动为 0 显示"弱"；wttr 不可用时回落官方当日等级 + 昼夜区分。 */
+    if(today && lv){
+      var uvTxt="";
+      if(lv.uvHour && lv.uvHour.idx!==null && lv.uvHour.idx>=0){
+        var uvLvl=uvLevel(lv.uvHour.idx);
+        uvTxt=" 紫外线"+(lv.uvHour.idx>0?(lv.uvHour.idx+" "+uvLvl):"弱");
+      }else if(lv.uv && lv.uv.level){
+        uvTxt=" 紫外线"+(isDaytime()?lv.uv.level:"弱");
+      }
+      if(uvTxt) main+=uvTxt;
+    }
     var tip=[];
     if(offFcIdx&&offFcIdx.high) tip.push("天气网官方 "+offFcIdx.type+" "+offFcIdx.high+"~"+offFcIdx.low+"°");
     else if(offToday) tip.push("天气网官方 "+offToday.weather+(offFc0&&offFc0.high?(" "+offFc0.high+"~"+offFc0.low+"°"):""));
     else if(lastOfficialType) tip.push("气象局 "+cmaType+(fc?(" "+fc.low+"~"+fc.high+"°"):""));
     else if(wrType) tip.push("天气来自 wttr.in 测站（官方源暂不可用）："+wrType);
     if(lv){ tip.push("实况 "+lv.temp+"°"); if(lv.pres) tip.push("气压 "+lv.pres+"hPa"); if(lv.vis) tip.push("能见度 "+lv.vis+"km"); if(lv.wind) tip.push(lv.wind+" "+(lv.windLv||(lv.windKmh+"km/h"))); }
-    if(today && lv && lv.uv && lv.uv.level) tip.push(isDaytime()?("紫外线指数 "+lv.uv.level+(lv.uv.desc?("："+lv.uv.desc):"")):("当前为夜间，紫外线弱；今日白天官方等级："+lv.uv.level+(lv.uv.desc?("（"+lv.uv.desc+"）"):"")));
+    if(today && lv){
+      if(lv.uvHour && lv.uvHour.idx!==null && lv.uvHour.idx>=0){
+        var uvLvl2=uvLevel(lv.uvHour.idx);
+        if(lv.uvHour.idx>0) tip.push("当前小时紫外线指数 "+lv.uvHour.idx+"（"+uvLvl2+"，wttr 小时预报）"+(lv.uv&&lv.uv.level?("；今日白天官方等级："+lv.uv.level+(lv.uv.desc?("（"+lv.uv.desc+"）"):"")):""));
+        else tip.push("当前为夜间，紫外线弱（wttr 小时值 0）"+(lv.uv&&lv.uv.level?("；今日白天官方等级："+lv.uv.level):""));
+      }else if(lv.uv && lv.uv.level){
+        tip.push(isDaytime()?("紫外线指数 "+lv.uv.level+(lv.uv.desc?("："+lv.uv.desc):"")):("当前为夜间，紫外线弱；今日白天官方等级："+lv.uv.level+(lv.uv.desc?("（"+lv.uv.desc+"）"):"")));
+      }
+    }
     /* 仅当官方实况不可用（lv 确实来自 wttr.in）时，才提示与气象局口径的差异 */
     if(!(officialWx&&officialWx.live) && !officialLive && cmaType&&wrType&&cmaType!==wrType) tip.push("wttr.in 测站为"+wrType+"（"+(lv&&lv.desc?lv.desc:"")+"），与气象局口径可能有差异");
     var tpTxt=typhoonText();
@@ -2312,7 +2346,8 @@ function officialLiveMerged(wt){
     pres:wt?wt.pres:"", vis:wt?wt.vis:"",
     type:ty, desc:wt?wt.desc:"",
     aqi:(ol&&ol.aqi>=0)?ol.aqi:((wt&&wt.aqi>=0)?wt.aqi:-1),
-    uv:(ol&&ol.uv)?ol.uv:null
+    uv:(ol&&ol.uv)?ol.uv:null,
+    uvHour:wt?wt.uvHour:null
   };
 }
 function aqiInfo(v){
