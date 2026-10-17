@@ -2295,7 +2295,8 @@ function officialLiveMerged(wt){
     wind:wd, windKmh:wt?wt.windKmh:"", windLv:wl,
     pres:wt?wt.pres:"", vis:wt?wt.vis:"",
     type:ty, desc:wt?wt.desc:"",
-    aqi:(ol&&ol.aqi>=0)?ol.aqi:((wt&&wt.aqi>=0)?wt.aqi:-1)
+    aqi:(ol&&ol.aqi>=0)?ol.aqi:((wt&&wt.aqi>=0)?wt.aqi:-1),
+    uv:(ol&&ol.uv)?ol.uv:null
   };
 }
 function aqiInfo(v){
@@ -2343,6 +2344,11 @@ if(showLive){
     if(lastWeather.pm10) tip.push("PM10 "+lastWeather.pm10+" μg/m³");
     if(lastWeather.quality) tip.push("站点评级 "+lastWeather.quality);
     if(lastWeather.obsTime) tip.push("污染物观测 "+lastWeather.obsTime);
+    /* 紫外线指数：官方 weather1d 生活指数 */
+    if(lv && lv.uv && lv.uv.level){
+      parts.push("紫外线 <b>"+lv.uv.level+"</b>");
+      tip.push("紫外线指数 "+lv.uv.level+(lv.uv.desc?("："+lv.uv.desc):""));
+    }
   }else{
     var idxR=currentForecastIndex();
     if(lastWeather&&lastWeather.forecast&&idxR>=0){
@@ -2523,7 +2529,10 @@ function parseOfficialLive(t){
     if(!isNaN(v)&&v>=0){ aqi=v; break; }
   }
   var wd=String(best.od24||"").replace(/\u98ce$/,"");
-  return {temp:best.od22||"", hum:best.od27||"", wind:wd, windLv:(best.od25?best.od25+"\u7ea7":""), aqi:aqi, type:""};
+  /* 紫外线指数：生活指数区 li（<span>等级</span><em>紫外线指数</em><p>建议</p>） */
+  var uv=null, uvRe=/<li class="li1[^"]*">\s*<i><\/i>\s*<span>([^<]*)<\/span>\s*<em>\u7d2b\u5916\u7ebf\u6307\u6570<\/em>\s*<p>([^<]*)<\/p>/m.exec(t);
+  if(uvRe) uv={level:uvRe[1], desc:uvRe[2]};
+  return {temp:best.od22||"", hum:best.od27||"", wind:wd, windLv:(best.od25?best.od25+"\u7ea7":""), aqi:aqi, type:"", uv:uv};
 }
 /* 拉取天气网"今天"页实况（weather1d，无需 Referer）：湿度/AQI/实时温度 */
 function fetchOfficialLive(){
