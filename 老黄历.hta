@@ -2797,8 +2797,9 @@ var GEOLOC_PS1=
 "  [IO.File]::WriteAllText($args[0],$out)\r\n"+
 "}catch{}\r\n";
 /* 防"显示桌面"隐藏：本窗口无任务栏按钮（SHOWINTASKBAR=no）、无最小化按钮，
-   用户无法主动最小化——一旦窗口被系统隐藏（Win+D / 任务栏"显示桌面"），
-   必然是系统引起，此时自动还原不会抢用户操作。用窗口高度骤变为 0/极小来识别。 */
+   用户无法主动最小化——若窗口被系统隐藏（Win+D / 任务栏"显示桌面"），自动还原。
+   只在窗口尺寸"从正常骤降到极小"（最小化/隐藏的特征）时触发一次，
+   不轮询、不反复抢焦点；正常使用与拖动不会触发。 */
 function restoreHiddenWin(){
   try{
     var sh=new ActiveXObject("WScript.Shell");
@@ -2807,18 +2808,27 @@ function restoreHiddenWin(){
   try{ window.focus(); }catch(e2){}
 }
 function bindAutoRestore(){
-  var last=0;
-  function probe(){
+  var last=0, prevH=0;
+  function onResizeExt(){
     try{
       var h=window.outerHeight||0;
-      if(h>0 && h<80){
+      /* 只有从正常高度（>200）骤降到极小（<80，含最小化时的 0）才视为被隐藏；
+         初始 prevH=0 时只记录不触发；若外层恒为 0/异常，也永不触发 */
+      if(prevH>200 && h<80){
         var now=new Date().getTime();
-        if(now-last>5000){ last=now; restoreHiddenWin(); }
+        if(now-last>8000){ last=now; restoreHiddenWin(); }
       }
+      prevH=h;
     }catch(e){}
   }
-  try{ window.onresize=function(){ try{ probe(); }catch(e){} }; }catch(e){}
-  try{ setInterval(probe,1500); }catch(e){}
+  /* 合并原 onresize：不能覆盖窗口缩放重排（layoutStage） */
+  var prevWin=window.onresize;
+  try{
+    window.onresize=function(){
+      if(typeof prevWin==="function"){ try{ prevWin(); }catch(e){} }
+      try{ onResizeExt(); }catch(e){}
+    };
+  }catch(e){}
 }
 function geoDist(lat1,lng1,lat2,lng2){
   var r=6371, dr=(lat2-lat1)*Math.PI/180, dl=(lng2-lng1)*Math.PI/180;
