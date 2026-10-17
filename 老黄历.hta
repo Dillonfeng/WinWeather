@@ -1641,6 +1641,10 @@ var lastWeather=null, lastFetchTs=0, weatherFailed=false, weatherRetry=0;
 /* 最近一次成功取得的官方(sojson)天气类型，例如"多云"。
    sojson 偶发失败时继续沿用，不回退到 wttr.in 测站的天气代码。 */
 var lastOfficialType="";
+/* 天气网官方(weather.com.cn)当日预报：d1.weather.com.cn/dingzhi 接口，
+   与 weather.com.cn 官网同源同口径（sojson 虽同为气象局数据，但预报类型
+   与官网页面存在"小雨/多云"这类口径差异，用户以官网为准）。null=尚未取得。 */
+var officialToday=null;
 var renderedYMD=null;
 var lastTodayKey=0;   /* 上一次心跳看到的"今天"（YYYYMMDD），用于跨天检测 */
 var posterKey=null, posterDetail=false, posterBusy=0;
@@ -2091,17 +2095,23 @@ function renderWeatherLine(y,m,d){
   if(fc&&fc.type) lastOfficialType=fc.type;
   var cmaType=lastOfficialType;
   if(cmaType||lv){
-    /* 天气状况以中国气象局(sojson)为准：wttr.in 用的是自有测站，偶发"附近有雨"就报毛毛雨，
+    /* 今日主类型/高低温：天气网官方(weather.com.cn)当日预报优先，sojson 兜底。
+       官方源与官网页面同口径（如"晴转多云"），sojson 的当天类型偶有"小雨/多云"口径差。 */
+    var off=(idx===0)?officialToday:null;
+    var mainType=off?(off.weather||cmaType):cmaType;
+    /* 天气状况以官方源为准：wttr.in 用的是自有测站，偶发"附近有雨"就报毛毛雨，
        与国内官方口径不符。数值(温度/体感/风/气压/能见度)仍取 wttr.in 的实况，更及时。 */
     var wrType=(lv&&lv.type)?lv.type:"";
-    var type=cmaType||wrType;
+    var type=mainType||wrType;
     var iconT=type||"阴";
-    /* 温度来历：有 wttr 实况用实况温度，否则退回气象局当日高低温 */
+    /* 温度来历：有 wttr 实况用实况温度，否则退回当日官方/气象局高低温 */
     var main="";
     if(lv&&lv.temp!=="") main=lv.temp+"°"+((lv.feels!=="")?(" 体感"+lv.feels+"°"):"");
+    else if(off&&off.temp) main=off.temp.replace("℃","")+"~"+off.tempn.replace("℃","")+"°";
     else if(fc) main=fc.low+"~"+fc.high+"°";
     var tip=[];
-    if(lastOfficialType) tip.push("气象局 "+cmaType+(fc?(" "+fc.low+"~"+fc.high+"°"):""));
+    if(off) tip.push("天气网官方 "+off.weather+(off.temp?(" "+off.temp.replace("℃","")+"~"+off.tempn.replace("℃","")+"°"):""));
+    else if(lastOfficialType) tip.push("气象局 "+cmaType+(fc?(" "+fc.low+"~"+fc.high+"°"):""));
     else if(wrType) tip.push("天气来自 wttr.in 测站（官方源暂不可用）："+wrType);
     if(lv){ tip.push("实况 "+lv.temp+"°"); if(lv.pres) tip.push("气压 "+lv.pres+"hPa"); if(lv.vis) tip.push("能见度 "+lv.vis+"km"); if(lv.wind) tip.push(lv.wind+" "+lv.windKmh+"km/h"); }
     if(cmaType&&wrType&&cmaType!==wrType) tip.push("wttr.in 测站为"+wrType+"（"+(lv&&lv.desc?lv.desc:"")+"），与气象局口径可能有差异");
@@ -2310,6 +2320,49 @@ function weatherRetryLater(){
   weatherRetry++;
   defer(function(){ fetchWeather(true); }, 2500);
 }
+/* 解析 d1.weather.com.cn/dingzhi 的返回：
+   var cityDZ101280601 ={"weatherinfo":{"city":"101280601","cityname":"深圳","fctime":"...",
+   "temp":"31℃","tempn":"25℃","weather":"晴转多云","weathercode":"d0","weathercoden":"n1",...}};
+   只取今日类型与高低温，失败返回 null（上层完全回退 sojson，不受影响） */
+function parseOfficialToday(t){
+  var m=/\{"weatherinfo":(\{[\s\S]*?\})\}/.exec(String(t));
+  if(!m) return null;
+  var c=m[1], g=function(k){
+    var q=new RegExp('"'+k+'"\\s*:\\s*"([^"]*)"').exec(c);
+    return q?q[1]:"";
+  };
+  var weather=g("weather");
+  if(!weather) return null;
+  return {temp:g("temp"), tempn:g("tempn"), weather:weather, code:g("weathercode"), time:g("fctime")};
+}
+/* 拉取天气网官方当日预报（d1 接口走明文 HTTP，IE9 可用；需带 Referer） */
+function fetchOfficialToday(){
+  if(!cfg.code) return;
+  var url="http://d1.weather.com.cn/dingzhi/"+cfg.code+".html?_="+new Date().getTime();
+  var xhr=null;
+  try{ xhr=regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){
+    try{ xhr=regXhr(new ActiveXObject("Msxml2.XMLHTTP.6.0")); }catch(e2){
+      try{ xhr=regXhr(new XMLHttpRequest()); }catch(e3){ xhr=null; }
+    }
+  }
+  if(!xhr) return;
+  try{
+    try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e5){}
+    xhr.open("GET",url,true);
+    try{ xhr.setRequestHeader("User-Agent","Mozilla/5.0 (compatible; MSIE 9.0; Windows NT 6.1)"); }catch(e4){}
+    try{ xhr.setRequestHeader("Referer","http://www.weather.com.cn/weather/"+cfg.code+".shtml"); }catch(e6){}
+    xhr.onreadystatechange=function(){
+      if(xhr.readyState==4 && xhr.status==200){
+        try{
+          var w=parseOfficialToday(xhr.responseText);
+          if(w) officialToday=w;
+        }catch(ex){}
+        if(!inMonthView) renderWeatherLine(cur.getFullYear(),cur.getMonth()+1,cur.getDate());
+      }
+    };
+    xhr.send(null);
+  }catch(e){}
+}
 function fetchWeather(force){
   var now=new Date().getTime();
   if(!force && now-lastFetchTs<30*60*1000) return;
@@ -2331,7 +2384,7 @@ function fetchWeather(force){
         if(xhr.status==200){
           try{
             var w=parseWeatherText(xhr.responseText);
-            if(w){ lastWeather=w; weatherFailed=false; weatherRetry=0; }
+            if(w){ lastWeather=w; weatherFailed=false; weatherRetry=0; fetchOfficialToday(); }
             else { weatherFailed=true; weatherRetryLater(); }
           }catch(ex){ weatherFailed=true; weatherRetryLater(); }
         }else{ weatherFailed=true; weatherRetryLater(); }
@@ -2658,6 +2711,30 @@ var GEOLOC_PS1=
 "  }catch{}\r\n"+
 "  [IO.File]::WriteAllText($args[0],$out)\r\n"+
 "}catch{}\r\n";
+/* 防"显示桌面"隐藏：本窗口无任务栏按钮（SHOWINTASKBAR=no）、无最小化按钮，
+   用户无法主动最小化——一旦窗口被系统隐藏（Win+D / 任务栏"显示桌面"），
+   必然是系统引起，此时自动还原不会抢用户操作。用窗口高度骤变为 0/极小来识别。 */
+function restoreHiddenWin(){
+  try{
+    var sh=new ActiveXObject("WScript.Shell");
+    sh.AppActivate("\u8001\u9ec4\u5386");   /* 还原并激活（标题=老黄历） */
+  }catch(e){}
+  try{ window.focus(); }catch(e2){}
+}
+function bindAutoRestore(){
+  var last=0;
+  function probe(){
+    try{
+      var h=window.outerHeight||0;
+      if(h>0 && h<80){
+        var now=new Date().getTime();
+        if(now-last>5000){ last=now; restoreHiddenWin(); }
+      }
+    }catch(e){}
+  }
+  try{ window.onresize=function(){ try{ probe(); }catch(e){} }; }catch(e){}
+  try{ setInterval(probe,1500); }catch(e){}
+}
 function geoDist(lat1,lng1,lat2,lng2){
   var r=6371, dr=(lat2-lat1)*Math.PI/180, dl=(lng2-lng1)*Math.PI/180;
   var a=Math.sin(dr/2)*Math.sin(dr/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dl/2)*Math.sin(dl/2);
@@ -3683,6 +3760,8 @@ try{ window.onresize=onWinResize; }catch(e){}
   /* 启动自动定位：仅在从未成功定位过时执行一次（结果已落盘）。
      异步发起、不阻塞界面，拿到结果后再刷新天气。 */
   if(!cfg.geoDone) defer(function(){ tryAutoGeo(false); }, 700);
+  /* 防"显示桌面"隐藏：窗口若被系统最小化/隐藏，自动还原（用户无法手动最小化，不抢操作） */
+  defer(function(){ try{ bindAutoRestore(); }catch(e){} }, 1500);
   defer(function(){ fetchTyphoon(); }, 900);
   defer(function(){ fetchLive(); }, 2500);
   /* 调休安排：启动后延迟同步（避开 onload 阶段的请求限制），之后每天复查一次 */
