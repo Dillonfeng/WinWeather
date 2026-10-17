@@ -3861,9 +3861,13 @@ try{ window.onresize=onWinResize; }catch(e){}
       setTimeout(function(){ b.disabled=false; },4000);
     };
     /* 选择城市只做 UI 预览，点「保存」才真正写入 cfg 并生效；
-       直接关闭（取消/✕/点外面）则重置，设置与日历始终一致。 */
+       直接关闭（取消/✕/点外面）则重置，设置与日历始终一致。
+       切到有校历数据的城市时自动打开校历开关（防之前切无校历城市
+       把 showSchool 置 0 后切回深圳仍不显示假期）；用户仍可保存前手动关掉。 */
     sel.onchange=function(){
       settingsCity=sel.value;
+      var ssel=document.getElementById("cfgSchool");
+      if(ssel && schoolSeedOf(sel.value)) ssel.value="1";
       updateGeoRow();
       updateSchoolRow();
       renderSchList();
