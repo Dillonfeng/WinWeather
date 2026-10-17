@@ -739,6 +739,15 @@ function sunTime(y,m,d,lat,lng,isRise){
   var hh=Math.floor(local), mm=Math.floor((local-hh)*60);
   return (hh<10?"0":"")+hh+":"+(mm<10?"0":"")+mm;
 }
+/* 当前时刻是否在白昼（日出~日落）内，用于紫外线等日级指数的昼夜区分显示 */
+function isDaytime(now){
+  now=now||new Date();
+  var sv=sunTime(now.getFullYear(),now.getMonth()+1,now.getDate(),cfg.lat,cfg.lng,true);
+  var ss=sunTime(now.getFullYear(),now.getMonth()+1,now.getDate(),cfg.lat,cfg.lng,false);
+  if(!sv||!ss||sv==="--:--"||ss==="--:--") return true;   /* 计算失败默认按白天 */
+  var t=("0"+now.getHours()).slice(-2)+":"+("0"+now.getMinutes()).slice(-2);
+  return (t>=sv && t<=ss);
+}
 
 /* ============================================================
    国务院放假调休安排 —— 分层同步策略
@@ -2119,15 +2128,17 @@ function renderWeatherLine(y,m,d){
     else if(offFc0&&offFc0.high) main=offFc0.high+"~"+offFc0.low+"°";
     else if(offToday&&offToday.temp) main=offToday.temp.replace("℃","")+"~"+offToday.tempn.replace("℃","")+"°";
     else if(fc) main=fc.low+"~"+fc.high+"°";
-    /* 紫外线指数显示在体感后面（官方 weather1d 生活指数） */
-    if(today && lv && lv.uv && lv.uv.level) main+=" 紫外线"+lv.uv.level;
+    /* 紫外线指数显示在体感后面（官方 weather1d 生活指数，为当日等级）。
+       夜间不显示白天的"很强"等分级：官方指数按天发布、昼夜同值，
+       天已黑还报"很强"会误导，故夜间按"紫外线弱"显示（悬停注明官方当日等级）。 */
+    if(today && lv && lv.uv && lv.uv.level) main+=" 紫外线"+(isDaytime()?lv.uv.level:"弱");
     var tip=[];
     if(offFcIdx&&offFcIdx.high) tip.push("天气网官方 "+offFcIdx.type+" "+offFcIdx.high+"~"+offFcIdx.low+"°");
     else if(offToday) tip.push("天气网官方 "+offToday.weather+(offFc0&&offFc0.high?(" "+offFc0.high+"~"+offFc0.low+"°"):""));
     else if(lastOfficialType) tip.push("气象局 "+cmaType+(fc?(" "+fc.low+"~"+fc.high+"°"):""));
     else if(wrType) tip.push("天气来自 wttr.in 测站（官方源暂不可用）："+wrType);
     if(lv){ tip.push("实况 "+lv.temp+"°"); if(lv.pres) tip.push("气压 "+lv.pres+"hPa"); if(lv.vis) tip.push("能见度 "+lv.vis+"km"); if(lv.wind) tip.push(lv.wind+" "+(lv.windLv||(lv.windKmh+"km/h"))); }
-    if(today && lv && lv.uv && lv.uv.level) tip.push("紫外线指数 "+lv.uv.level+(lv.uv.desc?("："+lv.uv.desc):""));
+    if(today && lv && lv.uv && lv.uv.level) tip.push(isDaytime()?("紫外线指数 "+lv.uv.level+(lv.uv.desc?("："+lv.uv.desc):"")):("当前为夜间，紫外线弱；今日白天官方等级："+lv.uv.level+(lv.uv.desc?("（"+lv.uv.desc+"）"):"")));
     /* 仅当官方实况不可用（lv 确实来自 wttr.in）时，才提示与气象局口径的差异 */
     if(!(officialWx&&officialWx.live) && !officialLive && cmaType&&wrType&&cmaType!==wrType) tip.push("wttr.in 测站为"+wrType+"（"+(lv&&lv.desc?lv.desc:"")+"），与气象局口径可能有差异");
     var tpTxt=typhoonText();
