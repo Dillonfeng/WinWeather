@@ -1645,6 +1645,7 @@ var lastOfficialType="";
    与 weather.com.cn 官网同源同口径（sojson 虽同为气象局数据，但预报类型
    与官网页面存在"小雨/多云"这类口径差异，用户以官网为准）。null=尚未取得。 */
 var officialWx=null;
+var officialLive=null;   /* weather1d 页面实况（observe24h_data：温度/湿度/风向/风力/AQI） */
 var renderedYMD=null;
 var lastTodayKey=0;   /* 上一次心跳看到的"今天"（YYYYMMDD），用于跨天检测 */
 var posterKey=null, posterDetail=false, posterBusy=0;
@@ -2123,7 +2124,7 @@ function renderWeatherLine(y,m,d){
     else if(wrType) tip.push("天气来自 wttr.in 测站（官方源暂不可用）："+wrType);
     if(lv){ tip.push("实况 "+lv.temp+"°"); if(lv.pres) tip.push("气压 "+lv.pres+"hPa"); if(lv.vis) tip.push("能见度 "+lv.vis+"km"); if(lv.wind) tip.push(lv.wind+" "+(lv.windLv||(lv.windKmh+"km/h"))); }
     /* 仅当官方实况不可用（lv 确实来自 wttr.in）时，才提示与气象局口径的差异 */
-    if(!(officialWx&&officialWx.live) && cmaType&&wrType&&cmaType!==wrType) tip.push("wttr.in 测站为"+wrType+"（"+(lv&&lv.desc?lv.desc:"")+"），与气象局口径可能有差异");
+    if(!(officialWx&&officialWx.live) && !officialLive && cmaType&&wrType&&cmaType!==wrType) tip.push("wttr.in 测站为"+wrType+"（"+(lv&&lv.desc?lv.desc:"")+"），与气象局口径可能有差异");
     var tpTxt=typhoonText();
     if(tpTxt) tip.push("⚠ 台风： "+tpTxt+(TYPHOON_AT?"（"+TYPHOON_AT+" 更新）":""));
     if(liveAt) tip.push("更新 "+liveAt);
@@ -2280,17 +2281,21 @@ function calcRealtimeAQI(){
   if(b>a) return b;
   return a;
 }
-/* 实况合并：天气网官方(主站页面 hour3data 当前时段)提供温度/天气/风向/风力，
-   wttr.in 兜底提供体感/湿度/气压/能见度；官方字段优先，其余保留 wttr 值 */
+/* 实况合并：天气网官方优先（weather1d 的 observe24h_data 提供温度/湿度/风向/风力/AQI，
+   weather 页 hour3data 提供温度/天气/风向/风力），wttr.in 兜底体感/气压/能见度 */
 function officialLiveMerged(wt){
   var o=officialWx&&officialWx.live?officialWx.live:null;
-  if(!o) return wt;
+  var ol=officialLive?officialLive:null;
+  var t=(ol&&ol.temp)||(o&&o.temp)||(wt?wt.temp:"");
+  var ty=(o&&o.type)||(ol&&ol.type)||(wt?wt.type:"");
+  var wd=(ol&&ol.wind)||(o&&o.wind)||(wt?wt.wind:"");
+  var wl=(ol&&ol.windLv)||(o&&o.windLv)||"";
   return {
-    temp:o.temp||(wt?wt.temp:""), feels:wt?wt.feels:"", hum:wt?wt.hum:"",
-    wind:o.wind||(wt?wt.wind:""), windKmh:wt?wt.windKmh:"", windLv:o.windLv||"",
+    temp:t, feels:wt?wt.feels:"", hum:(ol&&ol.hum)||(wt?wt.hum:""),
+    wind:wd, windKmh:wt?wt.windKmh:"", windLv:wl,
     pres:wt?wt.pres:"", vis:wt?wt.vis:"",
-    type:o.type||(wt?wt.type:""), desc:wt?wt.desc:"",
-    aqi:(o.aqi>=0)?o.aqi:((wt&&wt.aqi>=0)?wt.aqi:-1)
+    type:ty, desc:wt?wt.desc:"",
+    aqi:(ol&&ol.aqi>=0)?ol.aqi:((wt&&wt.aqi>=0)?wt.aqi:-1)
   };
 }
 function aqiInfo(v){
@@ -2326,14 +2331,14 @@ function renderAirLine(showLive){
   }else if(lastWeather && lastWeather.shidu){
     parts.push("湿度 <b>"+lastWeather.shidu+"</b>");
   }
-/* 空气质量：查看"今天"时给实时值（天气网官方 dataSK 的实时 AQI 优先，
+/* 空气质量：查看"今天"时给实时值（天气网官方 weather1d 实况 AQI 优先，
    否则按国标 HJ 633 用 PM2.5/PM10 换算）；查看其它日期时只能给当日预报值。 */
 if(showLive){
-  var rt=(officialWx&&officialWx.live&&officialWx.live.aqi>=0)?officialWx.live.aqi:calcRealtimeAQI();
+  var rt=(lv&&lv.aqi>=0)?lv.aqi:calcRealtimeAQI();
   if(rt>=0){
     var a=aqiInfo(rt);
     if(a) parts.push("<span class='aqi' style='color:"+a.c+";background:"+a.bg+"'>空气 "+rt+" "+a.n+"</span>");
-    tip.push((officialWx&&officialWx.live&&officialWx.live.aqi>=0)?"AQI 为天气网官方实时值（中国气象局）":"AQI 为国标 HJ 633-2012 按实时 PM2.5/PM10 浓度换算（官方接口不提供实时 AQI）；下方五日预报中的数字为当日预报 AQI，与实时值可能不同");
+    tip.push((lv&&lv.aqi>=0)?"AQI 为天气网官方实时值（中央气象台）":"AQI 为国标 HJ 633-2012 按实时 PM2.5/PM10 浓度换算（官方接口不提供实时 AQI）；下方五日预报中的数字为当日预报 AQI，与实时值可能不同");
     if(lastWeather.pm25) tip.push("PM2.5 "+lastWeather.pm25+" μg/m³");
     if(lastWeather.pm10) tip.push("PM10 "+lastWeather.pm10+" μg/m³");
     if(lastWeather.quality) tip.push("站点评级 "+lastWeather.quality);
@@ -2493,6 +2498,60 @@ function fetchOfficialWx(){
     xhr.send(null);
   }catch(e){}
 }
+/* 解析 weather1d 页面的实况（observe24h_data）：温度/湿度/风向/风力/AQI。
+   数组顺序由新到旧（od21=小时, od22=温度, od24=风向, od25=风力, od27=湿度, od28=AQI）。 */
+function parseOfficialLive(t){
+  if(!t||typeof t!=="string") return null;
+  var m=/var observe24h_data\s*=\s*(\{[\s\S]*?\});/m.exec(t);
+  if(!m) return null;
+  var d=null;
+  try{ d=(new Function("return "+m[1]+";"))(); }catch(e){ return null; }
+  var od=d&&d.od, arr=od&&od.od2;
+  if(!arr||!arr.length) return null;
+  var now=new Date(), curH=now.getHours(), best=null, bestGap=999;
+  for(var i=0;i<arr.length;i++){
+    var x=arr[i], h=parseInt(x.od21,10);
+    if(isNaN(h)) continue;
+    var gap=Math.abs(h-curH);
+    if(gap<bestGap){ bestGap=gap; best=x; }
+  }
+  if(!best) return null;
+  /* AQI：最新条目可能为空，向历史（数组由新到旧）回退找最近非空值 */
+  var aqi=-1;
+  for(var k=0;k<arr.length && k<10;k++){
+    var v=parseInt(arr[k].od28,10);
+    if(!isNaN(v)&&v>=0){ aqi=v; break; }
+  }
+  var wd=String(best.od24||"").replace(/\u98ce$/,"");
+  return {temp:best.od22||"", hum:best.od27||"", wind:wd, windLv:(best.od25?best.od25+"\u7ea7":""), aqi:aqi, type:""};
+}
+/* 拉取天气网"今天"页实况（weather1d，无需 Referer）：湿度/AQI/实时温度 */
+function fetchOfficialLive(){
+  if(!cfg.code) return;
+  var url="https://www.weather.com.cn/weather1d/"+cfg.code+".shtml?_="+new Date().getTime();
+  var xhr=null;
+  try{ xhr=regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){
+    try{ xhr=regXhr(new ActiveXObject("Msxml2.XMLHTTP.6.0")); }catch(e2){
+      try{ xhr=regXhr(new XMLHttpRequest()); }catch(e3){ xhr=null; }
+    }
+  }
+  if(!xhr) return;
+  try{
+    try{ xhr.setTimeouts(20000,20000,20000,20000); }catch(e5){}
+    xhr.open("GET",url,true);
+    try{ xhr.setRequestHeader("User-Agent","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"); }catch(e4){}
+    xhr.onreadystatechange=function(){
+      if(xhr.readyState==4 && xhr.status==200){
+        try{
+          var w=parseOfficialLive(xhr.responseText);
+          if(w) officialLive=w;
+        }catch(ex){}
+        if(!inMonthView) renderWeatherLine(cur.getFullYear(),cur.getMonth()+1,cur.getDate());
+      }
+    };
+    xhr.send(null);
+  }catch(e){}
+}
 function fetchWeather(force){
   var now=new Date().getTime();
   if(!force && now-lastFetchTs<30*60*1000) return;
@@ -2514,7 +2573,7 @@ function fetchWeather(force){
         if(xhr.status==200){
           try{
             var w=parseWeatherText(xhr.responseText);
-            if(w){ lastWeather=w; weatherFailed=false; weatherRetry=0; fetchOfficialWx(); }
+            if(w){ lastWeather=w; weatherFailed=false; weatherRetry=0; fetchOfficialWx(); fetchOfficialLive(); }
             else { weatherFailed=true; weatherRetryLater(); }
           }catch(ex){ weatherFailed=true; weatherRetryLater(); }
         }else{ weatherFailed=true; weatherRetryLater(); }
