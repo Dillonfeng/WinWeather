@@ -3315,12 +3315,16 @@ function tick(){
   fetchWeather(false);
   if(holNeedSync()) syncHolidays(false, function(st,updated){ if(updated) redrawCurrent(); });
   if(schoolNeedSync()) syncSchool(false, function(){ redrawCurrent(); });
-  /* 实况每 10 分钟刷新一次（原 30 分钟，过于滞后） */
+  /* 实况每 10 分钟刷新一次（原 30 分钟，过于滞后）；
+     官方实况(weather1d)也在此独立轮询——官方整点观测发布有几分钟延迟，
+     若只跟天气一起每 30 分钟刷，会长时间显示上一小时的旧观测，
+     与官网页面（分钟级更新的实况）出现 0.5° 级温差 */
   var nowMs=n.getTime();
   if(nowMs-lastLiveTs>=10*60*1000){
     lastLiveTs=nowMs;
     fetchLive();
     fetchTyphoon();
+    fetchOfficialLive();
   }
 }
 var lastLiveTs=0;
