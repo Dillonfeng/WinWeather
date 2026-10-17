@@ -1092,11 +1092,12 @@ function schoolStatusText(){
 /* 春秋假/寒暑假目前只有深圳数据，其他城市隐藏该设置行并说明原因 */
 function updateSchoolRow(){
   var row=document.getElementById("schRow"), tip=document.getElementById("schTip");
-  var has=!!schoolSeedOf(cfg.city);
+  var c=settingsCity||cfg.city;
+  var has=!!schoolSeedOf(c);
   if(row) row.style.display=has?"":"none";
   if(!tip) return;
   if(!has){ tip.innerHTML=""; return; }
-  var rec=schoolSeedOf(cfg.city), lines=[], i, t, d;
+  var rec=schoolSeedOf(c), lines=[], i, t, d;
   for(i=0;i<rec.terms.length;i++){
     t=rec.terms[i]; d=t.t[0]-t.f[0];
     lines.push(t.n+" "+t.f[0]+"/"+("0"+t.f[1]).slice(-2)+"-"
@@ -1118,7 +1119,7 @@ function parseYmd(s){
   if(m) return [new Date().getFullYear(),parseInt(m[1],10),parseInt(m[2],10)];
   return null;
 }
-function schTerms(){ var rec=schoolSeedOf(cfg.city); return rec?rec.terms:null; }
+function schTerms(){ var rec=schoolSeedOf(settingsCity||cfg.city); return rec?rec.terms:null; }
 function schMsg(txt,ok){
   var el=document.getElementById("schMsg");
   if(!el) return;
@@ -3193,7 +3194,8 @@ function tryAutoGeo(silent){
 function updateGeoRow(){
   var tip=document.getElementById("geoTip");
   if(!tip) return;
-  if(cfg.geoDone===1) tip.innerHTML="已自动定位：<b>"+escHtml(cfg.city)+"</b>（启动时只查询一次；换城市可点右侧重新定位）";
+  var c=settingsCity||cfg.city;
+  if(cfg.geoDone===1) tip.innerHTML="已自动定位：<b>"+escHtml(c)+"</b>（启动时只查询一次；换城市可点右侧重新定位）";
   else tip.innerHTML="尚未自动定位，启动时会自动尝试一次";
 }
 function closeApp(){
@@ -3422,6 +3424,8 @@ function mfAddAction(){
       saved);
   try{ nEl.focus(); }catch(e3){}
 }
+/* 设置面板中"选中但未保存"的预览城市：空=与 cfg.city 一致（保存/取消时重置） */
+var settingsCity="";
 function bindSettingsUI(){
   var addBtn=document.getElementById("mfAdd");
   if(addBtn) addBtn.onclick=mfAddAction;
@@ -3831,6 +3835,7 @@ try{ window.onresize=onWinResize; }catch(e){}
   holInit(); holLoad();
   document.getElementById("btnClose").onclick=closeApp;
   document.getElementById("btnSettings").onclick=function(){
+    settingsCity="";
     var sel=document.getElementById("cfgCity");
     if(!sel.options.length){
       for(var k in cityMap){
@@ -3851,11 +3856,10 @@ try{ window.onresize=onWinResize; }catch(e){}
       tryAutoGeo(false);
       setTimeout(function(){ b.disabled=false; },4000);
     };
-    /* 手动改城市视为用户明确选择：置 geoDone=1，
-       这样下次启动不会自动定位把它覆盖回去。 */
+    /* 选择城市只做 UI 预览，点「保存」才真正写入 cfg 并生效；
+       直接关闭（取消/✕/点外面）则重置，设置与日历始终一致。 */
     sel.onchange=function(){
-      cfg.city=sel.value;
-      cfg.geoDone=1;
+      settingsCity=sel.value;
       updateGeoRow();
       updateSchoolRow();
       renderSchList();
@@ -3889,11 +3893,13 @@ try{ window.onresize=onWinResize; }catch(e){}
       cfg.code=cityMap[city].code;
       cfg.lat=cityMap[city].lat;
       cfg.lng=cityMap[city].lng;
+      cfg.geoDone=1;   /* 手动选城市视为明确选择：下次启动不再自动定位覆盖 */
       /* 重置全部天气缓存，否则新城市名会配旧城市的天气/实况/AQI，
          出现"北京 多云"却显示广州温度的串城市错误 */
       lastWeather=null; weatherFailed=false; live=null; lastOfficialType="";
       fetchWeather(true); fetchLive();
     }
+    settingsCity="";
     /* 每周起始日与城市无关，单独设置并始终落盘 */
     var wsel=document.getElementById("cfgWeek");
     cfg.weekStart=(wsel&&wsel.value==="0")?0:1;
@@ -3902,9 +3908,11 @@ try{ window.onresize=onWinResize; }catch(e){}
     redrawCurrent();
   };
   document.getElementById("cfgCancel").onclick=function(){
+    settingsCity="";
     document.getElementById("settings").style.display="none";
   };
   document.getElementById("setClose").onclick=function(){
+    settingsCity="";
     document.getElementById("settings").style.display="none";
   };
   /* 点击面板之外的区域也可关闭，符合"点外面收起"的直觉。
@@ -3920,6 +3928,7 @@ try{ window.onresize=onWinResize; }catch(e){}
       if(p.id==="settings"||p.id==="btnSettings") return;
       p=p.parentNode;
     }
+    settingsCity="";
     panel.style.display="none";
   };
   try{ document.attachEvent("onmousedown",outsideDown); }catch(e10){}
