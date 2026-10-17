@@ -2104,7 +2104,8 @@ function renderWeatherLine(y,m,d){
     var offToday=off&&off.today?off.today:null;
     var offFc0=(off&&off.fc&&off.fc.length)?off.fc[0]:null;
     var offFcIdx=(idx>0&&officialWx&&officialWx.fc&&idx<officialWx.fc.length)?officialWx.fc[idx]:null;
-    var mainType=offFcIdx?(offFcIdx.type||cmaType):(offToday?(offToday.weather||cmaType):cmaType);
+    /* 官方今日类型：主站页面的 fc[0].type（weather 字段兼容历史结构） */
+    var mainType=offFcIdx?(offFcIdx.type||cmaType):(offToday?(offToday.weather||offToday.type||cmaType):cmaType);
     /* 天气状况以官方源为准：wttr.in 用的是自有测站，偶发"附近有雨"就报毛毛雨，
        与国内官方口径不符。数值(温度/体感/风/气压/能见度)取官方实况，wttr 兜底。 */
     var wrType=(lv&&lv.type)?lv.type:"";
@@ -2117,12 +2118,15 @@ function renderWeatherLine(y,m,d){
     else if(offFc0&&offFc0.high) main=offFc0.high+"~"+offFc0.low+"°";
     else if(offToday&&offToday.temp) main=offToday.temp.replace("℃","")+"~"+offToday.tempn.replace("℃","")+"°";
     else if(fc) main=fc.low+"~"+fc.high+"°";
+    /* 紫外线指数显示在体感后面（官方 weather1d 生活指数） */
+    if(today && lv && lv.uv && lv.uv.level) main+=" 紫外线"+lv.uv.level;
     var tip=[];
     if(offFcIdx&&offFcIdx.high) tip.push("天气网官方 "+offFcIdx.type+" "+offFcIdx.high+"~"+offFcIdx.low+"°");
     else if(offToday) tip.push("天气网官方 "+offToday.weather+(offFc0&&offFc0.high?(" "+offFc0.high+"~"+offFc0.low+"°"):""));
     else if(lastOfficialType) tip.push("气象局 "+cmaType+(fc?(" "+fc.low+"~"+fc.high+"°"):""));
     else if(wrType) tip.push("天气来自 wttr.in 测站（官方源暂不可用）："+wrType);
     if(lv){ tip.push("实况 "+lv.temp+"°"); if(lv.pres) tip.push("气压 "+lv.pres+"hPa"); if(lv.vis) tip.push("能见度 "+lv.vis+"km"); if(lv.wind) tip.push(lv.wind+" "+(lv.windLv||(lv.windKmh+"km/h"))); }
+    if(today && lv && lv.uv && lv.uv.level) tip.push("紫外线指数 "+lv.uv.level+(lv.uv.desc?("："+lv.uv.desc):""));
     /* 仅当官方实况不可用（lv 确实来自 wttr.in）时，才提示与气象局口径的差异 */
     if(!(officialWx&&officialWx.live) && !officialLive && cmaType&&wrType&&cmaType!==wrType) tip.push("wttr.in 测站为"+wrType+"（"+(lv&&lv.desc?lv.desc:"")+"），与气象局口径可能有差异");
     var tpTxt=typhoonText();
@@ -2344,11 +2348,6 @@ if(showLive){
     if(lastWeather.pm10) tip.push("PM10 "+lastWeather.pm10+" μg/m³");
     if(lastWeather.quality) tip.push("站点评级 "+lastWeather.quality);
     if(lastWeather.obsTime) tip.push("污染物观测 "+lastWeather.obsTime);
-    /* 紫外线指数：官方 weather1d 生活指数 */
-    if(lv && lv.uv && lv.uv.level){
-      parts.push("紫外线 <b>"+lv.uv.level+"</b>");
-      tip.push("紫外线指数 "+lv.uv.level+(lv.uv.desc?("："+lv.uv.desc):""));
-    }
   }else{
     var idxR=currentForecastIndex();
     if(lastWeather&&lastWeather.forecast&&idxR>=0){
@@ -2459,7 +2458,7 @@ function parseOfficialPage(t){
     r.fc.push({md:md, type:m[4], day:m[3], night:m[4], high:m[5], low:m[6], dayCode:m[1], nightCode:m[2]});
   }
   if(!r.fc.length) return null;
-  r.today=r.fc[0];
+  r.today={weather:r.fc[0].type, type:r.fc[0].type, high:r.fc[0].high, low:r.fc[0].low, md:r.fc[0].md};
   var arrRe=/"1d":\[([\s\S]*?)\]/m.exec(t);
   if(arrRe){
     var items=arrRe[1].match(/"([^"]*)"/g)||[];
