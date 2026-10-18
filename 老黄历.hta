@@ -690,26 +690,32 @@ var PAP="#f7f0dc"; /* 纸面底色，用作月相阴影，与背景无缝融合 
 var MSVGH='<svg class="wsvg moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">';
 var MDISC='<circle cx="16" cy="16" r="13" fill="#f4c542"/>';
 /* 农历初一起月相。亮面比例按农历日连续计算（朔望周期 29.53 天），
-   盈（娥眉/上弦/盈凸）亮面在【右】，亏（亏凸/下弦/残）亮面在【左】 */
+   盈（娥眉/上弦/盈凸）亮面在【右】，亏（亏凸/下弦/残）亮面在【左】。
+   亮面=月盘半圆+terminator 大半径圆（rx=ry 圆形弧，IE9 可靠），
+   半径 L=13/|1-2p|：p→0/1 时 L→13（半圆重合=无亮/满圆），p→0.5 时 L→∞（直线=半亮），
+   圆弧围出标准月牙（中间宽、两端尖）。 */
 function moonPhase(ld){
   var s="", name="";
   if(ld==1){ s='<circle cx="16" cy="16" r="13" fill="none" stroke="#c9a063" stroke-width="2" stroke-dasharray="3 3"/>'; name="新月(朔)"; }
+  else if(ld>=15&&ld<=16){ s=MDISC; name="满月(望)"; }
   else{
     var p=(1-Math.cos(2*Math.PI*(ld-1)/29.53))/2; /* 亮面比例 0..1 */
-    var xr=13*(1-2*p);                             /* 分界椭圆水平半轴 13..-13（面积=亮面比例） */
-    var d;
-    if(p<=0.5) d='M16,3a13,13 0 0,1 0,26a'+Math.max(xr,0.05)+',13 0 0,1 0,-26z'; /* 亮<半：右半圆+右半椭圆(月牙) */
-    else d='M16,3a13,13 0 0,1 0,26a'+(-xr)+',13 0 0,0 0,-26z';                  /* 亮>半：右半圆+左半椭圆 */
-    if(ld>=16) d='<g transform="translate(16,0) scale(-1,1) translate(-16,0)"><path d="'+d+'" fill="#f4c542"/></g>';
-    else d='<path d="'+d+'" fill="#f4c542"/>';
-    s=d;
-    if(ld<=6) name="娥眉月";
-    else if(ld<=8) name="上弦月";
-    else if(ld<=14) name="盈凸月";
-    else if(ld<=16) name="满月(望)";
-    else if(ld<=21) name="亏凸月";
-    else if(ld<=23) name="下弦月";
-    else name="残月";
+    var L=13/Math.max(Math.abs(1-2*p),0.02);      /* terminator 半径，13..650 */
+    if(L>999) L=999;
+    var Ls=L.toFixed(2);
+    if(ld<=16){ /* 盈：亮右。p≤0.5 terminator 小弧经右侧(sweep0)，p>0.5 经左侧(sweep1) */
+      var sw=(p<=0.5)?0:1;
+      s='<path d="M16,3A13,13 0 0,1 16,29A'+Ls+','+Ls+' 0 0,'+sw+' 16,3Z" fill="#f4c542"/>';
+      if(ld<=6) name="娥眉月";
+      else if(ld<=8) name="上弦月";
+      else name="盈凸月";
+    } else { /* 亏：亮左（手写镜像，不用 transform）。p≤0.5 小弧经左侧(sweep1)，p>0.5 经右侧(sweep0) */
+      var sw=(p<=0.5)?1:0;
+      s='<path d="M16,3A13,13 0 0,0 16,29A'+Ls+','+Ls+' 0 0,'+sw+' 16,3Z" fill="#f4c542"/>';
+      if(ld<=21) name="亏凸月";
+      else if(ld<=23) name="下弦月";
+      else name="残月";
+    }
   }
   return [MSVGH+s+"</svg>", name];
 }
