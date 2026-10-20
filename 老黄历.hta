@@ -1591,13 +1591,6 @@ var cityMap={
   "北京":{code:"101010100",lat:39.9042,lng:116.4074},
   "上海":{code:"101020100",lat:31.2304,lng:121.4737},
   "深圳":{code:"101280601",lat:22.5431,lng:114.0579},
-  /* 南山区：中国气象局提供区级观测编码 101280604。
-     深圳跨区较广，区级数据比全市代表站更贴近实际（尤其南山与罗湖天气常不同）。
-     坐标为南山区中心，用于日出日落的天文计算。 */
-  "深圳南山":{code:"101280604",lat:22.5331,lng:113.9308},
-  /* 龙岗区：sojson 未收录龙岗的区级编码（101280606 返回 403），
-     天气沿用深圳市站 101280601；坐标为龙岗中心，用于日出日落计算。 */
-  "深圳龙岗":{code:"101280601",lat:22.7207,lng:114.2469},
   "广州":{code:"101280101",lat:23.1291,lng:113.2644},
   "杭州":{code:"101210101",lat:30.2741,lng:120.1551},
   "成都":{code:"101270101",lat:30.5728,lng:104.0668},
@@ -1672,7 +1665,7 @@ function weatherIcon(type){
 var cur=new Date();
 var viewY, viewM;
 var inMonthView=false;
-var cfg={city:"北京",code:"101010100",lat:39.9042,lng:116.4074,weekStart:1,showSchool:0,winW:0,winH:0,winX:0,winY:0,geoDone:0};
+var cfg={city:"北京",code:"101010100",lat:39.9042,lng:116.4074,weekStart:1,showSchool:0,winW:0,winH:0,winX:0,winY:0,geoDone:0,manualCity:0};
 var lastWeather=null, lastFetchTs=0, weatherFailed=false, weatherRetry=0;
 /* 最近一次成功取得的官方(sojson)天气类型，例如"多云"。
    sojson 偶发失败时继续沿用，不回退到 wttr.in 测站的天气代码。 */
@@ -1715,6 +1708,7 @@ function parseCfgText(s){
   m=/"winX"\s*:\s*(-?\d+)/.exec(s);        if(m) c.winX=parseInt(m[1],10);
   m=/"winY"\s*:\s*(-?\d+)/.exec(s);        if(m) c.winY=parseInt(m[1],10);
   m=/"geoDone"\s*:\s*([01])/.exec(s);      if(m) c.geoDone=parseInt(m[1],10);
+  m=/"manualCity"\s*:\s*([01])/.exec(s);   if(m) c.manualCity=parseInt(m[1],10);
   if(isNaN(c.lat)||isNaN(c.lng)) return null;
   return c;
 }
@@ -1744,13 +1738,15 @@ function loadCfg(){
     var winY=(typeof c.winY==="number")?c.winY:0;
     /* 是否已完成过一次自动定位（1=不再每次启动联网查询） */
     var geo=(c.geoDone===1)?1:0;
+    /* 是否手动选过城市（1=启动不再自动定位，避免覆盖用户明确选择） */
+    var mc=(c.manualCity===1)?1:0;
     /* 以城市编码为准，保证城市名/经纬度/天气编码三者始终一致。
        注意此分支会整体替换 c，只保留 {city,code,lat,lng}，
        因此其余字段必须在替换前取出、替换后回填。 */
     if(c.code){
       var byCode=codeToCity(c.code);
-      /* 存了区级城市且编码一致时（如"深圳龙岗"与"深圳"共用 101280601），
-         按区级城市恢复，避免被编码反查降级成市级 */
+      /* 老版本可能存过区级城市（已从 cityMap 移除），
+         保留其 code+坐标，让 weather.com.cn 继续用区级编码 */
       if(c.city && cityMap[c.city] && cityMap[c.city].code==c.code){
         c={city:c.city, code:c.code, lat:cityMap[c.city].lat, lng:cityMap[c.city].lng};
       }else if(byCode){
@@ -1760,6 +1756,10 @@ function loadCfg(){
       }
     }else if(c.city && cityMap[c.city]){
       c={city:c.city, code:cityMap[c.city].code, lat:cityMap[c.city].lat, lng:cityMap[c.city].lng};
+    }else if(c.city && !isNaN(c.lat) && !isNaN(c.lng)){
+      /* 临时城市（自动定位到的非 cityMap 城市，code 为空）：
+         保留真实地名+坐标，和风按坐标直查天气 */
+      c={city:c.city, code:"", lat:c.lat, lng:c.lng};
     }else{
       return; /* 配置损坏，回到默认城市 */
     }
@@ -1773,6 +1773,10 @@ function loadCfg(){
     cfg.winX=winX;
     cfg.winY=winY;
     cfg.geoDone=geo;
+    cfg.manualCity=mc;
+    /* 和风天气 API Key：从 cfg 读，避免硬编码进源码（cfg 已 gitignore） */
+    if(typeof c.qweatherKey==="string") cfg.qweatherKey=c.qweatherKey;
+    if(cfg.qweatherKey){ QWEATHER_KEY=cfg.qweatherKey; }
   }catch(e){}
 }
 function saveCfg(){
@@ -1783,7 +1787,8 @@ function saveCfg(){
     /* 只写 ASCII（城市编码+经纬度），彻底避开系统代码页的中文编码问题 */
     var f=fso.CreateTextFile(folder+"\\huangli_cfg.json",true);
     var win=(cfg.winW>0 && cfg.winH>0)?(',"winW":'+cfg.winW+',"winH":'+cfg.winH+',"winX":'+cfg.winX+',"winY":'+cfg.winY):"";
-  win+=',"geoDone":'+(cfg.geoDone===1?1:0);
+    win+=',"geoDone":'+(cfg.geoDone===1?1:0)+',"manualCity":'+(cfg.manualCity===1?1:0);
+    if(cfg.qweatherKey) win+=',"qweatherKey":"'+cfg.qweatherKey+'"';
     f.Write('{"city":"'+ascEscape(cfg.city)+'","code":"'+cfg.code+'","lat":'+cfg.lat+',"lng":'+cfg.lng+',"weekStart":'+(cfg.weekStart===0?0:1)+',"showSchool":'+(cfg.showSchool===1?1:0)+win+'}\r\n');
     f.Close();
   }catch(e){}
@@ -2615,11 +2620,155 @@ function fetchOfficialLive(){
     xhr.send(null);
   }catch(e){}
 }
+/* ============================================================
+   和风天气（QWeather）：坐标直查，覆盖实况/7天预报/空气质量/紫外线
+   免费版 1000 次/天，数据来自中央气象台，与 weather.com.cn 同源。
+   ============================================================ */
+function fetchQWeather(){
+  if(!cfg.lat || !cfg.lng || !QWEATHER_KEY) return;
+  var loc=cfg.lng+","+cfg.lat;
+  var result={now:null, fc:null, air:null, uv:null}, completed=0;
+  function newXhr(){
+    try{ return regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){
+      try{ return regXhr(new ActiveXObject("Msxml2.XMLHTTP.6.0")); }catch(e2){
+        try{ return regXhr(new XMLHttpRequest()); }catch(e3){ return null; }
+      }
+    }
+  }
+  function checkDone(){
+    if(completed<4) return;
+    if(!result.now || !result.fc) return;   /* 至少需要实况+预报 */
+    var now=result.now;
+    /* 组装 lastWeather（sojson 兼容格式，供 renderWeatherLine/renderAirLine 使用） */
+    var forecast=[];
+    for(var i=0;i<result.fc.length;i++){
+      var f=result.fc[i];
+      forecast.push({ymd:f.fxDate, type:f.textDay, low:f.tempMin, high:f.tempMax, aqi:-1});
+    }
+    lastWeather={
+      wendu: now.temp,
+      shidu: now.humidity+"%",
+      pm25: (result.air&&result.air.pm25!=null)?String(result.air.pm25):"",
+      pm10: (result.air&&result.air.pm10!=null)?String(result.air.pm10):"",
+      quality: (result.air&&result.air.category)?result.air.category:"",
+      obsTime: now.obsTime,
+      aqi: (result.air&&result.air.aqi!=null)?parseInt(result.air.aqi,10):-1,
+      forecast: forecast
+    };
+    /* 组装 officialWx（weather.com.cn 主站页兼容格式） */
+    var todayFc=result.fc[0];
+    officialWx={
+      today: {
+        weather: now.text,
+        temp: (todayFc?todayFc.tempMax:"")+"℃",
+        tempn: (todayFc?todayFc.tempMin:"")+"℃"
+      },
+      fc: [],
+      live: {
+        temp: now.temp,
+        hum: now.humidity,
+        wind: now.windDir,
+        windScale: now.windScale+"级"
+      }
+    };
+    for(var j=0;j<result.fc.length;j++){
+      officialWx.fc.push({
+        type: result.fc[j].textDay,
+        high: result.fc[j].tempMax,
+        low: result.fc[j].tempMin
+      });
+    }
+    /* 组装 officialLive（weather1d 页兼容格式） */
+    var uvData=null;
+    if(result.uv && result.uv.length){
+      uvData={level: result.uv[0].category, desc: result.uv[0].text};
+    }
+    officialLive={
+      temp: now.temp,
+      hum: now.humidity,
+      wind: now.windDir,
+      windLv: now.windScale+"级",
+      aqi: (result.air&&result.air.aqi!=null)?parseInt(result.air.aqi,10):-1,
+      type: now.text,
+      uv: uvData
+    };
+    weatherFailed=false; weatherRetry=0;
+    if(!inMonthView) renderWeatherLine(cur.getFullYear(),cur.getMonth()+1,cur.getDate());
+  }
+  function qwGet(path, cb){
+    var xhr=newXhr();
+    if(!xhr){ completed++; checkDone(); return; }
+    try{
+      try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
+      xhr.open("GET","https://"+QWEATHER_HOST+"/v7/"+path+"?location="+loc+"&key="+QWEATHER_KEY,true);
+      xhr.onreadystatechange=function(){
+        if(xhr.readyState==4){
+          if(xhr.status==200){
+            try{
+              var d=JSON.parse(xhr.responseText);
+              if(d&&d.code==="200") cb(d);
+            }catch(e){}
+          }
+          completed++; checkDone();
+        }
+      };
+      xhr.send(null);
+    }catch(e){ completed++; checkDone(); }
+  }
+  /* 新版空气质量接口：/airquality/v1/current/{lat}/{lng} */
+  function qwAir(cb){
+    var xhr=newXhr();
+    if(!xhr){ completed++; checkDone(); return; }
+    try{
+      try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
+      xhr.open("GET","https://"+QWEATHER_HOST+"/airquality/v1/current/"+cfg.lat+"/"+cfg.lng+"?key="+QWEATHER_KEY,true);
+      xhr.onreadystatechange=function(){
+        if(xhr.readyState==4){
+          if(xhr.status==200){
+            try{
+              var d=JSON.parse(xhr.responseText);
+              if(d&&d.indexes&&d.indexes.length){
+                var idx=d.indexes[0], p25=null, p10=null;
+                if(d.pollutants){
+                  for(var i=0;i<d.pollutants.length;i++){
+                    if(d.pollutants[i].code==="pm2p5") p25=d.pollutants[i].concentration.value;
+                    if(d.pollutants[i].code==="pm10")  p10=d.pollutants[i].concentration.value;
+                  }
+                }
+                cb({aqi:idx.aqi, category:idx.category, pm25:p25, pm10:p10});
+              }
+            }catch(e){}
+          }
+          completed++; checkDone();
+        }
+      };
+      xhr.send(null);
+    }catch(e){ completed++; checkDone(); }
+  }
+  qwGet("weather/now",  function(d){ result.now=d.now; });
+  qwGet("weather/7d",   function(d){ result.fc=d.daily; });
+  qwAir(                function(a){ result.air=a; });
+  qwGet("indices/1d?type=5", function(d){ result.uv=d.daily; });
+}
 function fetchWeather(force){
   var now=new Date().getTime();
   if(!force && now-lastFetchTs<30*60*1000) return;
   lastFetchTs=now;
-  var url="http://t.weather.sojson.com/api/weather/city/"+cfg.code;
+  /* 优先级：和风天气（坐标直查，中央气象台数据）> 中国天气网（官方编码）> sojson（15天补充）> wttr.in（国外兜底）。
+     和风按坐标查询，无需维护城市编码表；weather.com.cn 独立调用，不依赖 sojson 结果；
+     sojson 用市级编码，临时城市（自动定位到的区县）从城市名提取市级再查 cityMap。 */
+  fetchQWeather();
+  fetchOfficialWx();
+  fetchOfficialLive();
+  var sojsonCode="";
+  if(cityMap[cfg.city]){
+    sojsonCode=cityMap[cfg.city].baseCode||cityMap[cfg.city].code;
+  }else{
+    var _bc=baseCityOf(cfg.city);
+    if(_bc && cityMap[_bc]) sojsonCode=cityMap[_bc].code;
+  }
+  if(!sojsonCode) sojsonCode=cfg.code;
+  var url="http://t.weather.sojson.com/api/weather/city/"+sojsonCode;
   var xhr=null;
   try{ xhr=regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){
     try{ xhr=regXhr(new ActiveXObject("Msxml2.XMLHTTP.6.0")); }catch(e2){
@@ -2636,7 +2785,7 @@ function fetchWeather(force){
         if(xhr.status==200){
           try{
             var w=parseWeatherText(xhr.responseText);
-            if(w){ lastWeather=w; weatherFailed=false; weatherRetry=0; fetchOfficialWx(); fetchOfficialLive(); }
+            if(w){ lastWeather=w; weatherFailed=false; weatherRetry=0; }
             else { weatherFailed=true; weatherRetryLater(); }
           }catch(ex){ weatherFailed=true; weatherRetryLater(); }
         }else{ weatherFailed=true; weatherRetryLater(); }
@@ -2928,11 +3077,15 @@ function cleanupAll(){
    ② ipip.net 的 IP 库：返回「省/市/区/运营商」结构文本，国内库较准，
       按城市名匹配 cityMap（实测本机判为「广东 深圳」，ip-api 却误判广州）
    ③ ip-api.com 经纬度：在 cityMap 中按 Haversine 距离取最近城市（兜底）
-   只在「从未成功定位过」时执行一次并把结果落盘，之后启动不再联网查询；
-   失败则标记未完成，下次启动自动重试。设置面板可手动「重新定位」。
+   每次启动静默定位一次并落盘（用户手动选过城市 manualCity=1 时除外）；
+   失败则下次启动自动重试。设置面板可手动「重新定位」。
    ============================================================ */
 var GEO_URL_IPAPI="http://ip-api.com/json/?lang=zh-CN";
 var GEO_URL_IPIP="http://myip.ipip.net/json";
+/* 和风天气 API Key：写入同目录 huangli_cfg.json 的 qweatherKey 字段（已 gitignore，不会入库）。
+   留空时 fetchQWeather 会静默跳过和风接口，不影响 weather.com.cn/sojson/wttr 兜底。 */
+var QWEATHER_KEY="";
+var QWEATHER_HOST="p85khy6vmp.re.qweatherapi.com";
 /* Windows 定位辅助脚本（hl_geoloc.ps1，由本程序在定位时生成到同目录再运行）。
    把经纬度与精度写进指定输出文件，纯 ASCII，避免系统代码页的中文乱码；
    内容全部来自程序自身，不含任何外部输入，无注入风险。 */
@@ -3155,7 +3308,7 @@ function geoIpapi(cb){
         m=/"regionName"\s*:\s*"([^"]*)"/.exec(t); if(m) nm=nm||m[1];
       }catch(e6){}
       if(isNaN(lat)||isNaN(lng)||Math.abs(lat)>90||Math.abs(lng)>180){ finish(false,"",null); return; }
-      var near=nearestCity(lat,lng,300);
+      var near=nearestCity(lat,lng,500);
       if(!near){ finish(false,"",null); return; }
       finish(true,near.city,{lat:lat,lng:lng,km:near.km,raw:nm,src:"ipapi"});
     };
@@ -3175,12 +3328,22 @@ function geoDetect(cb){
       if(info && (info.city||info.district)){
         var cty=cityNameOf(info.city), dct=districtOf(info.district);
         if(cty){
+          /* 只有明确匹配到区级城市时才直接采用；
+             district 为空或不匹配时不回退到市级，
+             让后面的 nearestCity 基于坐标找最近的区（如南山 vs 龙岗） */
           if(dct && cityMap[cty+dct]){ mc=cty+dct; }
-          else if(cityMap[cty]){ mc=cty; }
         }
       }
       if(!mc){
-        var near=nearestCity(lat,lng,80);
+        /* 有真实城市名时直接采用（和风按坐标查天气，无需 cityMap） */
+        if(cty){
+          var geoCity=cty;
+          if(dct) geoCity=cty+dct;
+          finish(true, geoCity, {lat:lat, lng:lng, acc:info?info.acc:0, src:"win", temp:true});
+          return;
+        }
+        /* 兜底：nearestCity 扩大到 500km，避免边界城市定位失败 */
+        var near=nearestCity(lat,lng,500);
         if(near) mc=near.city;
       }
       if(mc){ finish(true,mc,{lat:lat,lng:lng,km:0,acc:info?info.acc:0,src:"win"}); return; }
@@ -3202,6 +3365,20 @@ function applyGeoCity(cityName){
   cfg.lat=cityMap[cityName].lat;
   cfg.lng=cityMap[cityName].lng;
   cfg.geoDone=1;
+  cfg.manualCity=0;   /* 自动定位结果：允许下次启动再次自动定位 */
+  lastWeather=null; live=null; lastOfficialType="";
+  try{ saveCfg(); }catch(e){}
+  return true;
+}
+/* 临时城市（不在 cityMap 中）：用真实地名+坐标设置 cfg，
+   无 weather.com.cn 编码（code 置空），和风按坐标直查 */
+function applyGeoCityTemp(cityName, lat, lng){
+  cfg.city=cityName;
+  cfg.code="";
+  cfg.lat=lat;
+  cfg.lng=lng;
+  cfg.geoDone=1;
+  cfg.manualCity=0;   /* 自动定位结果：允许下次启动再次自动定位 */
   lastWeather=null; live=null; lastOfficialType="";
   try{ saveCfg(); }catch(e){}
   return true;
@@ -3214,12 +3391,18 @@ function tryAutoGeo(silent){
   geoDetect(function(ok,cityName,info){
     var box=document.getElementById("geoRow");
     if(ok){
-      /* 已在更精确的区级城市（如"深圳龙岗"）时，不因兜底降级为市级（"深圳"） */
-      if(cfg.city && cityName && cityName.length<cfg.city.length && cfg.city.indexOf(cityName)===0){
+      /* 只在启动时的静默自动定位中防止降级：避免 IP 定位把"深圳龙岗"降级为"深圳"。
+         手动点「重新定位」时用户明确要更新位置，不阻止降级/换区。 */
+      if(silent && cfg.city && cityName && cityName.length<cfg.city.length && cfg.city.indexOf(cityName)===0){
         cityName=cfg.city;
       }
       var changed=(cityName!==cfg.city);
-      applyGeoCity(cityName);
+      var applied=applyGeoCity(cityName);
+      /* cityMap 中无此城市：用真实地名+坐标临时设置（和风按坐标查天气） */
+      if(!applied && info && info.lat && info.lng){
+        applyGeoCityTemp(cityName, info.lat, info.lng);
+        changed=true;
+      }
       if(!silent && tip){
         var dTxt="";
         if(info){
@@ -3900,6 +4083,16 @@ try{ window.onresize=onWinResize; }catch(e){}
         sel.options[sel.options.length]=new Option(k,k);
       }
     }
+    /* 自动定位到的临时城市（不在 cityMap 中，如外地用户定位到的区县）：
+       先清掉旧的临时项，再把当前生效城市插到首位，保证下拉框正确回显——
+       否则 sel.value 匹配不到任何 option，IE 下会显示空白/第一项，误导用户 */
+    for(var oi=sel.options.length-1;oi>=0;oi--){
+      if(!cityMap[sel.options[oi].value]) sel.remove(oi);
+    }
+    if(cfg.city && !cityMap[cfg.city]){
+      var tmpOpt=new Option(cfg.city,cfg.city);
+      try{ sel.options.add(tmpOpt,0); }catch(eOpt){ sel.options[sel.options.length]=tmpOpt; }
+    }
     sel.value=cfg.city;
     var wsel=document.getElementById("cfgWeek");
     if(wsel) wsel.value=(cfg.weekStart===0)?"0":"1";
@@ -3956,6 +4149,7 @@ try{ window.onresize=onWinResize; }catch(e){}
       cfg.lat=cityMap[city].lat;
       cfg.lng=cityMap[city].lng;
       cfg.geoDone=1;   /* 手动选城市视为明确选择：下次启动不再自动定位覆盖 */
+      cfg.manualCity=1;
       /* 重置全部天气缓存，否则新城市名会配旧城市的天气/实况/AQI，
          出现"北京 多云"却显示广州温度的串城市错误 */
       lastWeather=null; weatherFailed=false; live=null; lastOfficialType="";
@@ -4035,9 +4229,9 @@ try{ window.onresize=onWinResize; }catch(e){}
   showView(false);
   lastTodayKey=todayKeyOf(new Date());
   defer(function(){ fetchWeather(true); fetchLive(); }, 400);
-  /* 启动自动定位：仅在从未成功定位过时执行一次（结果已落盘）。
-     异步发起、不阻塞界面，拿到结果后再刷新天气。 */
-  if(!cfg.geoDone) defer(function(){ tryAutoGeo(false); }, 700);
+  /* 每次启动静默自动定位（IP 城市名变短时保留原区级城市）；
+     用户在设置里手动选过城市（manualCity=1）则尊重其选择，不自动定位覆盖 */
+  if(!cfg.manualCity) defer(function(){ tryAutoGeo(true); }, 700);
   /* 防"显示桌面"隐藏：窗口若被系统最小化/隐藏，自动还原（用户无法手动最小化，不抢操作） */
   defer(function(){ try{ bindAutoRestore(); }catch(e){} }, 1500);
   defer(function(){ fetchTyphoon(); }, 900);
