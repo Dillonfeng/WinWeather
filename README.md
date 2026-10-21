@@ -12,6 +12,11 @@ mshta.exe "老黄历.hta"
 
 首次运行会在同目录生成 `holidays.txt`、`school.txt`、`myfest.txt`、`huangli_cfg.json` 与 `images/` 目录；自动定位时临时生成 `hl_geoloc.ps1`（Windows 定位辅助脚本）与 `hl_geo.txt`（定位结果，读后即删）。
 
+> **和风天气 API Key**：程序启动时会读取同目录 `huangli_cfg.json` 中的 `qweatherKey` 字段。
+> 有 key 时，天气/空气质量/紫外线/气象预警/台风全部走和风单一源；
+> 无 key 时自动降级为 weather.com.cn + wttr.in + typhoon.nmc.cn。
+> `huangli_cfg.json` 已在 `.gitignore` 中，不会提交到公开仓库。
+
 ## 功能
 
 | 模块 | 说明 |
@@ -19,9 +24,10 @@ mshta.exe "老黄历.hta"
 | 黄历 | 农历、干支、生肖、宜忌、值神、冲煞、节气、传统节日 |
 | 月相 | 按农历日推算 8 相，盈亮面在右、亏亮面在左；日行首尾标注「开始/结束」 |
 | 万年历 | 整月网格，支持**周一开头 / 周日开头**切换 |
-| 天气 | 中国气象局实况（天气状况以气象局为准）+ wttr.in 实况（温/体感/风/气压/能见度） |
-| 空气质量 | 优先显示气象局官方 AQI；悬停可看 PM2.5 / PM10 与观测时间 |
-| 气象预警 | 台风信息来自中国气象局台风网（免密钥），有活跃台风时显示警示 |
+| 天气 | 和风天气 6 接口：实况 / 7 天预报 / 实时 AQI / 5 天 AQI 预报 / 紫外线 / 气象预警 |
+| 空气质量 | 当前 AQI + 未来 5 天（今天用实时实测、未来用预报预测）；悬停看 PM2.5 / PM10 |
+| 气象预警 | 和风 weatheralert 覆盖台风 / 高温 / 暴雨 / 大风 / 雷电 / 寒潮 / 沙尘暴 / 大雾 / 霾 / 干旱 / 冰雹 等 |
+| 台风 | 和风 tropical-cyclone 全球活跃台风跟踪（位置 / 强度 / 风速 / 气压 / 移向移速 / 64 节风圈）；nmc 兜底 |
 | 节日海报 | 自动搜图；节日/生日配图不理想时可在设置里指定图片来源 |
 | 调休同步 | 每天自动从接口同步国务院放假与调休安排 |
 | 跨天刷新 | 零点后自动翻到新的一天，无需重启 |
@@ -30,22 +36,26 @@ mshta.exe "老黄历.hta"
 
 点右上角 ⚙ 打开：
 
-- **城市** —— 天气数据来源为中国气象局，国内可直连；首次启动自动定位
-- **定位** —— 三级定位：Windows 定位服务（WiFi/GPS）取坐标后经 photon 逆地理确认到区县（如「深圳龙岗」）→ ipip.net IP 库 → ip-api 坐标兜底；设置里可手动「重新定位」
+- **城市** —— 首次启动自动定位到县区级；定位链路：Windows WiFi/GPS + ip-api IP 坐标并行，坐标出来后经和风 GeoAPI 反查区县（如「深圳南山」）。设置里可手动「重新定位」
 - **每周** —— 周一开头 / 周日开头
 - **开机** —— 登录后自动启动（写入 `HKCU Run`，无需管理员权限）
 - **学校** —— 深圳中小学寒暑假与春秋假
 - **自定义节日** —— 支持每年公历 / 每年农历 / 仅一次，可配弹窗文字与配图来源
 
-## 数据来源
+## 数据来源（优先级从高到低）
 
-| 数据 | 来源 |
-|---|---|
-| 天气、预报、空气质量 | 中国气象局（经 sojson 接口） |
-| 实况温湿风压、能见度 | wttr.in |
-| 台风 | 中国气象局台风网 `typhoon.nmc.cn` |
-| 国务院调休 | 公开节假日接口 |
-| 深圳校历 | 深圳市教育局发文，内置于程序中，可手动维护 |
+| 数据 | 主要来源 | 降级兜底 |
+|---|---|---|
+| 实况天气（温/湿/风/气压/能见度/体感） | 和风 `/v7/weather/now` | weather.com.cn + wttr.in |
+| 7 天预报 | 和风 `/v7/weather/7d` | weather.com.cn |
+| 实时 AQI / PM2.5 / PM10 | 和风 `/airquality/v1/current` | sojson |
+| 5 天 AQI 预报 | 和风 `/airquality/v1/daily` | sojson 15 天 AQI 截取 |
+| 紫外线 | 和风 `/v7/indices/1d?type=5` | wttr.in |
+| 气象预警（高温/暴雨/大风/…） | 和风 `/weatheralert/v1/current` | — |
+| 台风跟踪（活跃台风 + 实况） | 和风 `/v7/tropical/storm-list` + `storm-track` | 中国气象局台风网 `typhoon.nmc.cn` |
+| 本地台风预警 | 和风 `/weatheralert/v1/current`（事件码 1001） | — |
+| 节假日 | timor.tech | — |
+| IP 定位 | ip-api.com + ipip.net | — |
 
 ## 自定义节日配图
 
@@ -60,5 +70,5 @@ mshta.exe "老黄历.hta"
 ## 浏览器内核说明
 
 本程序依赖 IE9 文档模式运行（`<meta http-equiv="X-UA-Compatible" content="IE=9">`），
-因此只使用 HTTP 接口，不支持 HTTPS；表格行不能直接赋 `innerHTML`，需用
+但请求接口已全部升级为 HTTPS；表格行不能直接赋 `innerHTML`，需用
 `insertRow()/insertCell()` 构建。
