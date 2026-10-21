@@ -101,9 +101,16 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
 /* 台风预警独立占一行，不再挤占天气实况的位置。
    做成整行警示丸：有台风时出现，无台风时 display:none 完全不占高度。 */
 #tyLine{line-height:19px;}
-#tyLine .tyBox{display:block;padding:0 8px;border-radius:9px;background:#f6d8d1;
-  border:1px solid #dd9a8c;color:#9c1c10;font-weight:bold;font-size:13.5px;
-  overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+/* 远洋台风跟踪（nmc）：蓝色信息风，🌀 标识，不制造恐慌 */
+#tyLine .tyBox{display:block;padding:2px 8px;border-radius:9px;background:#e3f2fd;
+  border:1px solid #90caf9;color:#0d47a1;font-weight:bold;font-size:12.5px;
+  white-space:normal;word-break:break-all;}
+/* 本地台风预警（和风 weatheralert）：红色警示风，⚠ 标识 */
+#tyLine .tyBox.tyAlert{background:#f6d8d1;border-color:#dd9a8c;color:#9c1c10;}
+/* 气象预警（高温/暴雨/大风/雷电/寒潮/沙尘暴/大雾/霾…） */
+#alertLine{line-height:19px;}
+#alertLine .alertBox{display:inline-block;padding:0 7px;border-radius:9px;font-size:12px;line-height:19px;
+  border:1px solid;font-weight:bold;margin-right:2px;}
 .aqi{display:inline-block;padding:0 7px;border-radius:9px;font-size:12.5px;line-height:19px;
   vertical-align:1px;font-weight:bold;}
 .aqism{font-size:11px;margin-left:3px;font-weight:bold;}
@@ -282,6 +289,7 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
           <div class="infoLine" id="moonLine"></div>
           <div class="infoLine" id="weatherLine"></div>
           <div class="infoLine" id="tyLine" style="display:none;"></div>
+          <div class="infoLine" id="alertLine" style="display:none;"></div>
           <div class="infoLine" id="airLine"></div>
           <div class="fc5" id="fc5"></div>
           <div class="infoLine" id="sunLine"></div>
@@ -1709,6 +1717,8 @@ function parseCfgText(s){
   m=/"winY"\s*:\s*(-?\d+)/.exec(s);        if(m) c.winY=parseInt(m[1],10);
   m=/"geoDone"\s*:\s*([01])/.exec(s);      if(m) c.geoDone=parseInt(m[1],10);
   m=/"manualCity"\s*:\s*([01])/.exec(s);   if(m) c.manualCity=parseInt(m[1],10);
+  /* 和风 API Key（32 位十六进制字符串，正则允许任意非引号字符） */
+  m=/"qweatherKey"\s*:\s*"([^"]*)"/.exec(s); if(m) c.qweatherKey=m[1];
   if(isNaN(c.lat)||isNaN(c.lng)) return null;
   return c;
 }
@@ -1728,6 +1738,8 @@ function loadCfg(){
     var s=f.ReadAll(); f.Close();
     var c=parseCfgText(s);
     if(!c) return;
+    /* [DEBUG] cfg 原始字段 */
+    _log("[loadCfg] raw cfg keys: "+Object.keys(c).join(",")+" qweatherKey="+JSON.stringify(c.qweatherKey));
     /* 每周起始日（0=周日, 1=周一）与城市无关，需在下面重建 c 之后回填 */
     var ws=(c.weekStart===0)?0:1;
     var shRaw=c.showSchool;   /* 可能为 undefined（老配置没有该字段） */
@@ -1743,6 +1755,7 @@ function loadCfg(){
     /* 以城市编码为准，保证城市名/经纬度/天气编码三者始终一致。
        注意此分支会整体替换 c，只保留 {city,code,lat,lng}，
        因此其余字段必须在替换前取出、替换后回填。 */
+    var _qwKey=c.qweatherKey; /* [FIX] 替换 c 之前先存下和风 key */
     if(c.code){
       var byCode=codeToCity(c.code);
       /* 老版本可能存过区级城市（已从 cityMap 移除），
@@ -1775,9 +1788,11 @@ function loadCfg(){
     cfg.geoDone=geo;
     cfg.manualCity=mc;
     /* 和风天气 API Key：从 cfg 读，避免硬编码进源码（cfg 已 gitignore） */
-    if(typeof c.qweatherKey==="string") cfg.qweatherKey=c.qweatherKey;
-    if(cfg.qweatherKey){ QWEATHER_KEY=cfg.qweatherKey; }
-  }catch(e){}
+    /* [FIX] _qwKey 是替换 c 之前存的；c.qweatherKey 在被替换后已丢失 */
+    if(typeof _qwKey==="string" && _qwKey){ cfg.qweatherKey=_qwKey; QWEATHER_KEY=_qwKey; }
+    else if(typeof c.qweatherKey==="string"){ cfg.qweatherKey=c.qweatherKey; QWEATHER_KEY=c.qweatherKey; }
+    _log("[loadCfg] AFTER fill: cfg.qweatherKey="+JSON.stringify(cfg.qweatherKey)+" QWEATHER_KEY.length="+QWEATHER_KEY.length);
+  }catch(e){ _log("[loadCfg] EXCEPTION: "+e.message); }
 }
 function saveCfg(){
   var folder=appFolder();
@@ -2116,6 +2131,9 @@ function renderDay(){
 function escHtml(s){
   return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
+/* [DEBUG] mshta 无 console，日志写到同目录 qw_debug.log。
+   功能稳定后已关闭输出；需要调试时把下面一行改回函数体即可。 */
+function _log(s){ /* no-op */ }
 
 function renderWeatherLine(y,m,d){
   var el=document.getElementById("weatherLine");
@@ -2160,14 +2178,15 @@ function renderWeatherLine(y,m,d){
     else if(offToday&&offToday.temp) main=offToday.temp.replace("℃","")+"~"+offToday.tempn.replace("℃","")+"°";
     else if(fc) main=fc.low+"~"+fc.high+"°";
     /* 紫外线：小时级优先（wttr 当前小时 uvIndex，官方无小时级数据）；
-       夜间自动为 0 显示"弱"；wttr 不可用时回落官方当日等级 + 昼夜区分。 */
+       夜间自动为 0 显示"弱"；wttr 不可用时回落官方当日等级 + 昼夜区分。
+       官方 uv.level 是数值指数(字符串"3")，uv.category 是等级名("中等")。 */
     if(today && lv){
       var uvTxt="";
       if(lv.uvHour && lv.uvHour.idx!==null && lv.uvHour.idx>=0){
         var uvLvl=uvLevel(lv.uvHour.idx);
         uvTxt=" 紫外线"+(lv.uvHour.idx>0?(lv.uvHour.idx+" "+uvLvl):"弱");
       }else if(lv.uv && lv.uv.level){
-        uvTxt=" 紫外线"+(isDaytime()?lv.uv.level:"弱");
+        uvTxt=" 紫外线"+(isDaytime()?(lv.uv.level+(lv.uv.category?(" "+lv.uv.category):"")):"弱");
       }
       if(uvTxt) main+=uvTxt;
     }
@@ -2180,8 +2199,8 @@ function renderWeatherLine(y,m,d){
     if(today && lv){
       if(lv.uvHour && lv.uvHour.idx!==null && lv.uvHour.idx>=0){
         var uvLvl2=uvLevel(lv.uvHour.idx);
-        if(lv.uvHour.idx>0) tip.push("当前小时紫外线指数 "+lv.uvHour.idx+"（"+uvLvl2+"，wttr 小时预报）"+(lv.uv&&lv.uv.level?("；今日白天官方等级："+lv.uv.level+(lv.uv.desc?("（"+lv.uv.desc+"）"):"")):""));
-        else tip.push("当前为夜间，紫外线弱（wttr 小时值 0）"+(lv.uv&&lv.uv.level?("；今日白天官方等级："+lv.uv.level):""));
+        if(lv.uvHour.idx>0) tip.push("当前小时紫外线指数 "+lv.uvHour.idx+"（"+uvLvl2+"，wttr 小时预报）"+(lv.uv&&lv.uv.level?("；今日白天官方指数："+lv.uv.level+(lv.uv.category?("（"+lv.uv.category+"）"):"")+(lv.uv.desc?("："+lv.uv.desc):"")):""));
+        else tip.push("当前为夜间，紫外线弱（wttr 小时值 0）"+(lv.uv&&lv.uv.level?("；今日白天官方指数："+lv.uv.level+(lv.uv.category?("（"+lv.uv.category+"）"):"")):""));
       }else if(lv.uv && lv.uv.level){
         tip.push(isDaytime()?("紫外线指数 "+lv.uv.level+(lv.uv.desc?("："+lv.uv.desc):"")):("当前为夜间，紫外线弱；今日白天官方等级："+lv.uv.level+(lv.uv.desc?("（"+lv.uv.desc+"）"):"")));
       }
@@ -2199,6 +2218,7 @@ function renderWeatherLine(y,m,d){
     if(idx>=0) renderForecast5(idx);
     renderAirLine(today);
     renderTyphoonLine();
+    renderAlerts();
     return;
   }
   if(weatherFailed){
@@ -2247,10 +2267,21 @@ function renderForecast5(idx){
     var base=new Date();
     for(i=0;i<n;i++){
       var f=officialWx.fc[idx+i];
-      var ymd=officialYmd(base, f.md);
+      /* 和风来源直接有 ymd；天气网来源只有 "M/D"，走 officialYmd 换算 */
+      var ymd=f.ymd||officialYmd(base, f.md);
       var lbl=dayLabelOf(ymd);
       var ic=weatherIcon(f.type||f.day||"阴");
-      html+="<div class='cell'><div class='d'>"+lbl+"</div><div class='ic'>"+ic+"</div><div class='t'>"+f.low+"~"+f.high+"°</div></div>";
+      /* 五日 AQI：和风 air daily 只给 3 天，剩余天数按 ymd 去 lastWeather.forecast 取，
+         两者都是同一批组装的数据，aqi>=0 才显示 */
+      var fAqi=-1;
+      if(lastWeather&&lastWeather.forecast){
+        for(var pi=0;pi<lastWeather.forecast.length;pi++){
+          if(lastWeather.forecast[pi].ymd===ymd && lastWeather.forecast[pi].aqi>=0){ fAqi=lastWeather.forecast[pi].aqi; break; }
+        }
+      }
+      var aAqi=aqiInfo(fAqi);
+      var aqHtml=(aAqi)?"<span class='aqism' style='color:"+aAqi.c+";' title='当日预报AQI "+fAqi+" "+aAqi.n+"（非实时）'>"+fAqi+"</span>":"";
+      html+="<div class='cell'><div class='d'>"+lbl+aqHtml+"</div><div class='ic'>"+ic+"</div><div class='t'>"+f.low+"~"+f.high+"°</div></div>";
     }
     el.innerHTML=html;
     return;
@@ -2354,9 +2385,10 @@ function officialLiveMerged(wt){
   var wd=(ol&&ol.wind)||(o&&o.wind)||(wt?wt.wind:"");
   var wl=(ol&&ol.windLv)||(o&&o.windLv)||"";
   return {
-    temp:t, feels:wt?wt.feels:"", hum:(ol&&ol.hum)||(wt?wt.hum:""),
-    wind:wd, windKmh:wt?wt.windKmh:"", windLv:wl,
-    pres:wt?wt.pres:"", vis:wt?wt.vis:"",
+    temp:t, feels:(ol&&ol.feels)||(wt?wt.feels:""), hum:(ol&&ol.hum)||(wt?wt.hum:""),
+    wind:wd, windKmh:(ol&&ol.windKmh)||(wt?wt.windKmh:""), windLv:wl,
+    /* 气压/能见度优先取和风 now（ol），wttr 仅兜底 */
+    pres:(ol&&ol.pres)||(wt?wt.pres:""), vis:(ol&&ol.vis)||(wt?wt.vis:""),
     type:ty, desc:wt?wt.desc:"",
     aqi:(ol&&ol.aqi>=0)?ol.aqi:((wt&&wt.aqi>=0)?wt.aqi:-1),
     uv:(ol&&ol.uv)?ol.uv:null,
@@ -2396,17 +2428,23 @@ function renderAirLine(showLive){
   }else if(lastWeather && lastWeather.shidu){
     parts.push("湿度 <b>"+lastWeather.shidu+"</b>");
   }
-/* 空气质量：查看"今天"时给实时值（天气网官方 weather1d 实况 AQI 优先，
-   否则按国标 HJ 633 用 PM2.5/PM10 换算）；查看其它日期时只能给当日预报值。 */
+/* 空气质量：查看"今天"时给实时值。
+   优先级：和风实时 AQI（坐标直查，区县精度，6 因子完整）→
+           天气网官方 weather1d 实况 AQI（中央气象台，市级）→
+           国标 HJ 633 用 PM2.5/PM10 换算（仅剩两项因子）。
+   查看其它日期时只能给当日预报值（sojson 提供）。 */
 if(showLive){
-  var rt=(lv&&lv.aqi>=0)?lv.aqi:calcRealtimeAQI();
+  var rt=-1, rtSrc="";
+  if(lastWeather && lastWeather.aqi>=0){ rt=lastWeather.aqi; rtSrc="和风实时 AQI"; }
+  else if(lv&&lv.aqi>=0){ rt=lv.aqi; rtSrc="天气网官方实时 AQI（中央气象台）"; }
+  else{ rt=calcRealtimeAQI(); rtSrc="国标 HJ 633-2012 按 PM2.5/PM10 浓度换算"; }
   if(rt>=0){
     var a=aqiInfo(rt);
     if(a) parts.push("<span class='aqi' style='color:"+a.c+";background:"+a.bg+"'>空气 "+rt+" "+a.n+"</span>");
-    tip.push((lv&&lv.aqi>=0)?"AQI 为天气网官方实时值（中央气象台）":"AQI 为国标 HJ 633-2012 按实时 PM2.5/PM10 浓度换算（官方接口不提供实时 AQI）；下方五日预报中的数字为当日预报 AQI，与实时值可能不同");
+    tip.push("AQI 为 "+rtSrc+"；下方预报中数字为当日预报 AQI，与实时值可能不同");
     if(lastWeather.pm25) tip.push("PM2.5 "+lastWeather.pm25+" μg/m³");
     if(lastWeather.pm10) tip.push("PM10 "+lastWeather.pm10+" μg/m³");
-    if(lastWeather.quality) tip.push("站点评级 "+lastWeather.quality);
+    if(lastWeather.quality) tip.push("空气等级 "+lastWeather.quality);
     if(lastWeather.obsTime) tip.push("污染物观测 "+lastWeather.obsTime);
   }else{
     var idxR=currentForecastIndex();
@@ -2625,25 +2663,95 @@ function fetchOfficialLive(){
    免费版 1000 次/天，数据来自中央气象台，与 weather.com.cn 同源。
    ============================================================ */
 function fetchQWeather(){
-  if(!cfg.lat || !cfg.lng || !QWEATHER_KEY) return;
+  /* [DEBUG] 和风入口日志：定位到底有没有调到和风 */
+  _log("[QWeather] fetchQWeather called, key="+QWEATHER_KEY.length+" chars, lat="+cfg.lat+", lng="+cfg.lng);
+  _log("[QWeather] env: typeof JSON="+(typeof JSON)+", JSON.parse="+(typeof JSON!=="undefined"?typeof JSON.parse:"n/a"));
+  if(!cfg.lat || !cfg.lng || !QWEATHER_KEY){ _log("[QWeather] SKIP — key/坐标缺失"); return; }
   var loc=cfg.lng+","+cfg.lat;
-  var result={now:null, fc:null, air:null, uv:null}, completed=0;
+  /* JSON 解析兼容层：HTA 默认 IE7 文档模式时没有 window.JSON，
+     此时回退到 eval（数据来自可信天气接口，仅做字面量求值） */
+  function _jp(t){
+    if(!t) return null;
+    t=String(t).replace(/^\uFEFF/,"").replace(/^\s+|\s+$/g,"");
+    if(!t) return null;
+    try{ if(typeof JSON!=="undefined" && JSON.parse) return JSON.parse(t); }catch(e){}
+    try{ return eval("("+t+")"); }catch(e){ return null; }
+  }
+  /* 6 个并行请求：now + 7d + air/current + air/daily + uv + alert */
+  var result={now:null, fc:null, air:null, airDaily:null, uv:null, alert:null}, completed=0;
+  var _cb="&_cb="+Math.floor(Math.random()*1e9);
   function newXhr(){
-    try{ return regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){
-      try{ return regXhr(new ActiveXObject("Msxml2.XMLHTTP.6.0")); }catch(e2){
+    /* 和风响应带 Content-Encoding: gzip。ServerXMLHTTP 走 WinHTTP 栈不会自动解压，
+       会拿到 gzip 二进制导致 JSON 解析失败；Msxml2.XMLHTTP 走 WinINet 栈，自动解压。 */
+    try{ return regXhr(new ActiveXObject("Msxml2.XMLHTTP.6.0")); }catch(e){
+      try{ return regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e2){
         try{ return regXhr(new XMLHttpRequest()); }catch(e3){ return null; }
       }
     }
   }
   function checkDone(){
-    if(completed<4) return;
-    if(!result.now || !result.fc) return;   /* 至少需要实况+预报 */
+    if(completed<6){ _log("[QWeather] checkDone "+completed+"/6 waiting"); return; }
+    _log("[QWeather] checkDone all 6 done, now="+!!result.now+" fc="+!!result.fc+" air="+!!result.air+" airDaily="+!!result.airDaily+" alert="+!!result.alert+" uv="+!!result.uv);
+    if(!result.now || !result.fc){
+      /* 和风失败 → 触发 backup 链路（weather.com.cn + wttr.in + typhoon.nmc.cn） */
+      _log("[QWeather] FAIL now/fc null, triggering backup");
+      if(QWEATHER_KEY && (!result.now || !result.fc)){
+        weatherFailed=true;
+        fetchOfficialWx();
+        fetchOfficialLive();
+        fetchLive();
+        fetchTyphoon();
+      }
+      return;
+    }
     var now=result.now;
-    /* 组装 lastWeather（sojson 兼容格式，供 renderWeatherLine/renderAirLine 使用） */
+    /* 和风 daily AQI 按日期建索引，forecast 优先取之；
+       天数不够时 fallback 到 lastWeather（sojson）已有值。
+       注意 forecastStartTime 是 UTC，需转本地日期再匹配 7d 的 fxDate */
+    function utcDateToLocal(utc){
+      if(!utc) return "";
+      try{
+        var d=new Date(utc);
+        if(isNaN(d.getTime())) return "";
+        var y=d.getFullYear(), m=("0"+(d.getMonth()+1)).slice(-2), dd=("0"+d.getDate()).slice(-2);
+        return y+"-"+m+"-"+dd;
+      }catch(e){ return utc.slice(0,10); }
+    }
+    var aqiByDate={};
+    if(result.airDaily && result.airDaily.days){
+      for(var ai=0;ai<result.airDaily.days.length;ai++){
+        var ad=result.airDaily.days[ai];
+        if(ad.indexes){
+          for(var aij=0;aij<ad.indexes.length;aij++){
+            /* 和风 daily AQI 的 index code 可能是 qaqi/caqi（国际版）或 cn-mee（中国版，中央气象台 AQI） */
+            var ic=ad.indexes[aij].code||"";
+            if(ic==="qaqi"||ic==="caqi"||ic==="cn-mee"){
+              aqiByDate[utcDateToLocal(ad.forecastStartTime)]=ad.indexes[aij].aqi;
+              break;
+            }
+          }
+        }
+      }
+    }
     var forecast=[];
+    /* 今天的 AQI 优先用实时实测值（result.air.aqi），与 airLine 保持一致；
+       未来几天才用 airquality/daily 的预报预测值。 */
+    var curAqi=(result.air&&result.air.aqi!=null)?parseInt(result.air.aqi,10):-1;
     for(var i=0;i<result.fc.length;i++){
       var f=result.fc[i];
-      forecast.push({ymd:f.fxDate, type:f.textDay, low:f.tempMin, high:f.tempMax, aqi:-1});
+      var aqi=-1;
+      if(i===0 && curAqi>=0){
+        aqi=curAqi;                        /* 今天：实时实测 AQI */
+      }else if(aqiByDate[f.fxDate]!=null){
+        aqi=aqiByDate[f.fxDate];           /* 未来：和风 daily 预报 AQI */
+      }else if(lastWeather&&lastWeather.forecast){
+        for(var pi=0;pi<lastWeather.forecast.length;pi++){
+          if(lastWeather.forecast[pi].ymd===f.fxDate && lastWeather.forecast[pi].aqi>=0){
+            aqi=lastWeather.forecast[pi].aqi; break;
+          }
+        }
+      }
+      forecast.push({ymd:f.fxDate, type:f.textDay, low:f.tempMin, high:f.tempMax, aqi:aqi});
     }
     lastWeather={
       wendu: now.temp,
@@ -2673,41 +2781,80 @@ function fetchQWeather(){
     };
     for(var j=0;j<result.fc.length;j++){
       officialWx.fc.push({
+        ymd: result.fc[j].fxDate,   /* 和风 7d 直接给 YYYY-MM-DD，供五日预报日期标签使用 */
         type: result.fc[j].textDay,
         high: result.fc[j].tempMax,
         low: result.fc[j].tempMin
       });
     }
-    /* 组装 officialLive（weather1d 页兼容格式） */
+    /* 组装 officialLive（weather1d 页兼容格式）。
+       和风 indices(type=5) 返回 level=数值指数(如"3")、category=等级名(如"中等")、text=提示。
+       之前把 level 写成 category 导致界面只显示"中等"而无数值，现已纠正。 */
     var uvData=null;
     if(result.uv && result.uv.length){
-      uvData={level: result.uv[0].category, desc: result.uv[0].text};
+      uvData={level: result.uv[0].level, category: result.uv[0].category, desc: result.uv[0].text};
     }
     officialLive={
       temp: now.temp,
       hum: now.humidity,
       wind: now.windDir,
       windLv: now.windScale+"级",
+      windKmh: now.windSpeed,
+      /* 体感/气压/能见度：和风 now 直接提供，不再依赖 wttr.in */
+      feels: now.feelsLike,
+      pres: now.pressure,
+      vis: now.vis,
       aqi: (result.air&&result.air.aqi!=null)?parseInt(result.air.aqi,10):-1,
       type: now.text,
       uv: uvData
     };
     weatherFailed=false; weatherRetry=0;
-    if(!inMonthView) renderWeatherLine(cur.getFullYear(),cur.getMonth()+1,cur.getDate());
+    /* 和风实时预警（高温/暴雨/大风/雷电/寒潮/沙尘暴/大雾/霾/台风…） */
+    LAST_ALERTS=result.alert&&result.alert.alerts?result.alert.alerts:[];
+    LAST_ALERTS_AT=nowClock();
+    /* 从预警里提取活跃台风，替换 typhon.nmc.cn 的结果作为优先来源 */
+    var alertTyphoons=[];
+    for(var ti=0;ti<LAST_ALERTS.length;ti++){
+      if(LAST_ALERTS[ti].eventType && (LAST_ALERTS[ti].eventType.code==="1001" || LAST_ALERTS[ti].eventType.name==="台风")){
+        var a=LAST_ALERTS[ti];
+        alertTyphoons.push({
+          id:a.id,
+          cn:a.headline?a.headline.replace(/预警信号/,"").replace(/.*?(台风|热带风暴|强热带风暴|强台风|超强台风|热带低压)/,"$1"):"台风",
+          level:a.severity||"",
+          desc:a.description||a.headline||"",
+          src:"alert"   /* 本地台风预警，用 ⚠ 红色警示样式 */
+        });
+      }
+    }
+    if(alertTyphoons.length){
+      TYPHOONS=alertTyphoons; TYPHOON_AT=LAST_ALERTS_AT;
+    }else{
+      /* 和风本地无台风预警时（zeroResult），台风属于远洋系统仍应展示，
+         继续用 typhoon.nmc.cn 补充活跃台风列表 */
+      try{ fetchTyphoon(); }catch(e){}
+    }
+    _log("[Render] lastWeather.aqi="+(lastWeather?lastWeather.aqi:"null")+" quality="+(lastWeather?lastWeather.quality:"")+" pm25="+(lastWeather?lastWeather.pm25:"")+" pm10="+(lastWeather?lastWeather.pm10:""));
+    if(!inMonthView){ renderWeatherLine(cur.getFullYear(),cur.getMonth()+1,cur.getDate()); renderAlerts(); }
   }
   function qwGet(path, cb){
     var xhr=newXhr();
     if(!xhr){ completed++; checkDone(); return; }
     try{
       try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
-      xhr.open("GET","https://"+QWEATHER_HOST+"/v7/"+path+"?location="+loc+"&key="+QWEATHER_KEY,true);
+      /* path 可能已带查询串（如 indices/1d?type=5），不能直接再拼 "?"，
+         否则会变成 ...?type=5?location=... 导致 location 丢失（HTTP 400） */
+      var sep=(path.indexOf("?")>=0)?"&":"?";
+      xhr.open("GET","https://"+QWEATHER_HOST+"/v7/"+path+sep+"location="+loc+"&key="+QWEATHER_KEY+_cb,true);
       xhr.onreadystatechange=function(){
         if(xhr.readyState==4){
+          try{ _log("[QWeather] /v7/"+path+" HD="+String(xhr.getAllResponseHeaders||"")+""); }catch(e){}
+          _log("[QWeather] /v7/"+path+" HTTP="+xhr.status+" len="+String(xhr.responseText||"").length+" resp="+String(xhr.responseText||"").substring(0,200));
           if(xhr.status==200){
             try{
-              var d=JSON.parse(xhr.responseText);
+              var d=_jp(xhr.responseText);
+              _log("[QWeather] /v7/"+path+" → code="+(d?d.code:"null")+" (now="+!!(d&&d.now)+" daily="+!!(d&&d.daily)+")");
               if(d&&d.code==="200") cb(d);
-            }catch(e){}
+            }catch(e){ _log("[QWeather] /v7/"+path+" JSON parse error: "+e.message); }
           }
           completed++; checkDone();
         }
@@ -2721,12 +2868,14 @@ function fetchQWeather(){
     if(!xhr){ completed++; checkDone(); return; }
     try{
       try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
-      xhr.open("GET","https://"+QWEATHER_HOST+"/airquality/v1/current/"+cfg.lat+"/"+cfg.lng+"?key="+QWEATHER_KEY,true);
+      xhr.open("GET","https://"+QWEATHER_HOST+"/airquality/v1/current/"+cfg.lat+"/"+cfg.lng+"?key="+QWEATHER_KEY+_cb,true);
       xhr.onreadystatechange=function(){
         if(xhr.readyState==4){
+          _log("[QWeather] /airquality/v1/current HTTP="+xhr.status+" resp="+String(xhr.responseText||"").substring(0,200));
           if(xhr.status==200){
             try{
-              var d=JSON.parse(xhr.responseText);
+              var d=_jp(xhr.responseText);
+              _log("[QWeather] /airquality/v1/current → indexes="+(d&&d.indexes?d.indexes.length:0));
               if(d&&d.indexes&&d.indexes.length){
                 var idx=d.indexes[0], p25=null, p10=null;
                 if(d.pollutants){
@@ -2737,8 +2886,56 @@ function fetchQWeather(){
                 }
                 cb({aqi:idx.aqi, category:idx.category, pm25:p25, pm10:p10});
               }
-            }catch(e){}
-          }
+            }catch(e){ _log("[QWeather] /airquality/v1/current JSON error"); }
+          }else{ _log("[QWeather] /airquality/v1/current HTTP "+xhr.status); }
+          completed++; checkDone();
+        }
+      };
+      xhr.send(null);
+    }catch(e){ completed++; checkDone(); }
+  }
+  /* 和风 daily AQI 预报：/airquality/v1/daily/{lat}/{lng} */
+  function qwAirDaily(cb){
+    var xhr=newXhr();
+    if(!xhr){ completed++; checkDone(); return; }
+    try{
+      try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
+      xhr.open("GET","https://"+QWEATHER_HOST+"/airquality/v1/daily/"+cfg.lat+"/"+cfg.lng+"?key="+QWEATHER_KEY+_cb,true);
+      xhr.onreadystatechange=function(){
+        if(xhr.readyState==4){
+          _log("[QWeather] /airquality/v1/daily HTTP="+xhr.status+" resp="+String(xhr.responseText||"").substring(0,200));
+          if(xhr.status==200){
+            try{
+              var d=_jp(xhr.responseText);
+              _log("[QWeather] /airquality/v1/daily → days="+(d&&d.days?d.days.length:0));
+              if(d&&d.days){ cb(d); }
+            }catch(e){ _log("[QWeather] /airquality/v1/daily JSON error"); }
+          }else{ _log("[QWeather] /airquality/v1/daily HTTP "+xhr.status); }
+          completed++; checkDone();
+        }
+      };
+      xhr.send(null);
+    }catch(e){ completed++; checkDone(); }
+  }
+  /* 和风实时气象预警：/weatheralert/v1/current/{lat}/{lng}
+     覆盖高温/暴雨/大风/雷电/寒潮/沙尘暴/大雾/霾/台风等数百种事件 */
+  function qwAlert(cb){
+    var xhr=newXhr();
+    if(!xhr){ completed++; checkDone(); return; }
+    try{
+      try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
+      xhr.open("GET","https://"+QWEATHER_HOST+"/weatheralert/v1/current/"+cfg.lat+"/"+cfg.lng+"?key="+QWEATHER_KEY+_cb,true);
+      xhr.onreadystatechange=function(){
+        if(xhr.readyState==4){
+          _log("[QWeather] /weatheralert HTTP="+xhr.status+" resp="+String(xhr.responseText||"").substring(0,200));
+          if(xhr.status==200){
+            try{
+              var d=_jp(xhr.responseText);
+              _log("[QWeather] /weatheralert/v1/current → alerts="+(d&&d.alerts?d.alerts.length:0)+" zeroResult="+(d&&d.metadata&&d.metadata.zeroResult));
+              if(d&&d.alerts){ cb(d); }
+              else if(d){ cb(d); }   /* zeroResult=true 时无 alerts 字段 */
+            }catch(e){ _log("[QWeather] /weatheralert JSON error"); }
+          }else{ _log("[QWeather] /weatheralert HTTP "+xhr.status); }
           completed++; checkDone();
         }
       };
@@ -2748,18 +2945,26 @@ function fetchQWeather(){
   qwGet("weather/now",  function(d){ result.now=d.now; });
   qwGet("weather/7d",   function(d){ result.fc=d.daily; });
   qwAir(                function(a){ result.air=a; });
+  qwAirDaily(           function(a){ result.airDaily=a; });
   qwGet("indices/1d?type=5", function(d){ result.uv=d.daily; });
+  qwAlert(              function(a){ result.alert=a; });
 }
 function fetchWeather(force){
   var now=new Date().getTime();
   if(!force && now-lastFetchTs<30*60*1000) return;
   lastFetchTs=now;
-  /* 优先级：和风天气（坐标直查，中央气象台数据）> 中国天气网（官方编码）> sojson（15天补充）> wttr.in（国外兜底）。
-     和风按坐标查询，无需维护城市编码表；weather.com.cn 独立调用，不依赖 sojson 结果；
-     sojson 用市级编码，临时城市（自动定位到的区县）从城市名提取市级再查 cityMap。 */
+  /* 优先级：和风（坐标直查，中央气象台，区县精度）为单一主源，
+     weather.com.cn / wttr.in / typhoon.nmc.cn 全部降级为 backup（和风无 key 或失败时才启用）；
+     sojson 仅用于补 forecast AQI 天数缺口（和风 daily 只有 3 天，sojson 有 5 天）。 */
+  var hasQw=!!QWEATHER_KEY;
   fetchQWeather();
-  fetchOfficialWx();
-  fetchOfficialLive();
+  if(!hasQw){
+    /* 和风无 key → 启用 weather.com.cn + wttr.in 全链路 */
+    fetchOfficialWx();
+    fetchOfficialLive();
+  }
+  /* sojson：始终调用，但仅用于补 forecast AQI 天数缺口
+     （和风 daily 只有 3 天，sojson 给 5 天），其余字段以和风为准 */
   var sojsonCode="";
   if(cityMap[cfg.city]){
     sojsonCode=cityMap[cfg.city].baseCode||cityMap[cfg.city].code;
@@ -2785,8 +2990,37 @@ function fetchWeather(force){
         if(xhr.status==200){
           try{
             var w=parseWeatherText(xhr.responseText);
-            if(w){ lastWeather=w; weatherFailed=false; weatherRetry=0; }
-            else { weatherFailed=true; weatherRetryLater(); }
+            if(w){
+              /* 合并：和风优先，sojson 仅补 forecast AQI 天数缺口
+                 （和风 daily 只有 3 天 AQI，sojson 给 5 天）。
+                 其余字段（aqi/pm25/pm10/quality/wendu/shidu）以和风为准，
+                 因为和风是坐标直查区县精度，比 sojson 市级更准。 */
+              if(lastWeather){
+                w.aqi=lastWeather.aqi;
+                w.pm25=lastWeather.pm25;
+                w.pm10=lastWeather.pm10;
+                w.quality=lastWeather.quality;
+                w.obsTime=lastWeather.obsTime;
+                w.wendu=lastWeather.wendu;
+                w.shidu=lastWeather.shidu;
+                /* sojson forecast 只补 lastWeather forecast 里 aqi==-1 的天数 */
+                if(lastWeather.forecast&&w.forecast){
+                  for(var si=0;si<w.forecast.length;si++){
+                    for(var li=0;li<lastWeather.forecast.length;li++){
+                      if(w.forecast[si].ymd===lastWeather.forecast[li].ymd){
+                        if(lastWeather.forecast[li].aqi===-1 && w.forecast[si].aqi>=0){
+                          lastWeather.forecast[li].aqi=w.forecast[si].aqi;
+                        }
+                        break;
+                      }
+                    }
+                  }
+                }
+              }else{
+                lastWeather=w;
+              }
+              weatherFailed=false; weatherRetry=0;
+            }
           }catch(ex){ weatherFailed=true; weatherRetryLater(); }
         }else{ weatherFailed=true; weatherRetryLater(); }
         if(!inMonthView) renderWeatherLine(cur.getFullYear(),cur.getMonth()+1,cur.getDate());
@@ -3085,7 +3319,7 @@ var GEO_URL_IPIP="http://myip.ipip.net/json";
 /* 和风天气 API Key：写入同目录 huangli_cfg.json 的 qweatherKey 字段（已 gitignore，不会入库）。
    留空时 fetchQWeather 会静默跳过和风接口，不影响 weather.com.cn/sojson/wttr 兜底。 */
 var QWEATHER_KEY="";
-var QWEATHER_HOST="p85khy6vmp.re.qweatherapi.com";
+var QWEATHER_HOST="p85khy6vmp.re.qweatherapi.com"; /* 和风控制台分配的专属 API Host（免费版同样有） */
 /* Windows 定位辅助脚本（hl_geoloc.ps1，由本程序在定位时生成到同目录再运行）。
    把经纬度与精度写进指定输出文件，纯 ASCII，避免系统代码页的中文乱码；
    内容全部来自程序自身，不含任何外部输入，无注入风险。 */
@@ -3097,7 +3331,8 @@ var GEOLOC_PS1=
 "  $null=[Windows.Devices.Geolocation.Geolocator,Windows.Devices.Geolocation,ContentType=WindowsRuntime]\r\n"+
 "  $null=[Windows.Devices.Geolocation.Geoposition,Windows.Devices.Geolocation,ContentType=WindowsRuntime]\r\n"+
 "  $m=([System.WindowsRuntimeSystemExtensions].GetMethods()|Where-Object{$_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'})[0]\r\n"+
-"  function Await($t,$rt){ $a=$m.MakeGenericMethod($rt); $n=$a.Invoke($null,@($t)); if(-not $n.Wait(12000)){ throw 'timeout' }; $n.Result }\r\n"+
+"  function Await($t,$rt){ $a=$m.MakeGenericMethod($rt); $n=$a.Invoke($null,@($t)); if(-not $n.Wait(9000)){ throw 'timeout' }; $n.Result }\r\n"+
+"  try{ Start-Process -WindowStyle Hidden -FilePath 'cmd.exe' -ArgumentList '/c',('ping -n 12 127.0.0.1 >nul & taskkill /f /pid '+$PID+' >nul 2>nul') | Out-Null }catch{}\r\n"+
 "  $l=New-Object Windows.Devices.Geolocation.Geolocator\r\n"+
 "  $p=Await ($l.GetGeopositionAsync()) ([Windows.Devices.Geolocation.Geoposition])\r\n"+
 "  $c=$p.Coordinate.Point.Position\r\n"+
@@ -3198,10 +3433,12 @@ function districtOf(d){
   if(d.length>1 && d.charAt(d.length-1)==="\u533a") return d.slice(0,-1);
   return null;
 }
-/* 创建一个受 regXhr 管理的 XHR（退出时统一中止） */
+/* 创建一个受 regXhr 管理的 XHR（退出时统一中止）。
+   优先 WinINet 栈的 Msxml2.XMLHTTP：和风响应带 Content-Encoding: gzip，
+   ServerXMLHTTP 走 WinHTTP 不会自动解压，会拿到二进制导致解析失败。 */
 function geoNewXhr(){
-  try{ return regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){
-    try{ return regXhr(new ActiveXObject("Msxml2.XMLHTTP.6.0")); }catch(e2){
+  try{ return regXhr(new ActiveXObject("Msxml2.XMLHTTP.6.0")); }catch(e){
+    try{ return regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e2){
       try{ return regXhr(new XMLHttpRequest()); }catch(e3){ return null; }
     }
   }
@@ -3210,21 +3447,22 @@ function geoNewXhr(){
 function geoWinLocation(cb){
   cb=cb||function(){};
   var s=shellObj(), fso=fsoObj();
-  if(!s || !fso){ cb(false,0,0,null); return; }
+  if(!s || !fso){ _log("[GeoWin] FAIL: shell/fso 不可用"); cb(false,0,0,null); return; }
   var folder=appFolder()||".";
   var psFile=folder+"\\hl_geoloc.ps1", outFile=folder+"\\hl_geo.txt";
   try{
     var f=fso.CreateTextFile(psFile,true);
     f.Write(GEOLOC_PS1); f.Close();
     try{ if(fso.FileExists(outFile)) fso.DeleteFile(outFile); }catch(e1){}
-  }catch(e){ cb(false,0,0,null); return; }
+  }catch(e){ _log("[GeoWin] FAIL: 写 ps1 失败 "+e.message); cb(false,0,0,null); return; }
   var pw="C:\\Windows";
   try{ pw=s.ExpandEnvironmentStrings("%SystemRoot%")||pw; }catch(e2){}
   var cmd='"'+pw+'\\System32\\WindowsPowerShell\\v1.0\\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "'+psFile+'" "'+outFile+'"';
-  try{ s.Run(cmd,0,false); }catch(e){ cb(false,0,0,null); return; }
+  _log("[GeoWin] 启动 PowerShell 定位脚本…");
+  try{ s.Run(cmd,0,false); }catch(e){ _log("[GeoWin] FAIL: Run 失败 "+e.message); cb(false,0,0,null); return; }
   var waited=0;
   function poll(){
-    if(waited>18000){ cb(false,0,0,null); return; }
+    if(waited>11000){ _log("[GeoWin] 超时，未拿到坐标（本机定位提供程序无响应）"); cb(false,0,0,null); return; }
     waited+=600;
     try{
       if(fsoObj() && fso.FileExists(outFile)){
@@ -3276,17 +3514,70 @@ function geoIpip(cb){
           /* [国家, 省, 市, 区, 运营商]；直辖市无市一级，省即市 */
           var prov=arr[1]||"", cty=arr[2]||"", dct=arr[3]||"";
           city=String(cty||prov).replace(/市$/,"");
-          /* 区级有对应条目（如 深圳南山）时优先选用 */
-          if(dct && cityMap[city+dct]) city=city+dct;
+          var base=city, geoLat=0, geoLng=0;
+          /* 区级不依赖 cityMap：ipip 的区名统一去掉"区/县/市/旗"后缀再拼接，
+             如 深圳 + 南山区 → 深圳南山。坐标取所属市级条目的经纬度兜底
+             （IPIP 不返回坐标），下游走临时城市路径，和风按坐标直查。 */
+          if(dct){
+            var dt=String(dct).replace(/(区|县|市|旗)$/,"");
+            if(dt && dt!==base){
+              var mc=cityMap[base];
+              if(mc){ geoLat=mc.lat; geoLng=mc.lng; city=base+dt; }
+            }
+          }
         }
       }catch(e6){}
-      if(!city || !cityMap[city]){ finish(false,"",null); return; }
-      finish(true,city,{src:"ipip"});
+      if(!city){ finish(false,"",null); return; }
+      /* 区级临时城市不在 cityMap 中，用携带的市级坐标走临时城市路径 */
+      if(!cityMap[city] && !(geoLat && geoLng)){ finish(false,"",null); return; }
+      finish(true,city,{src:"ipip", lat:geoLat, lng:geoLng});
     };
     xhr.send(null);
   }catch(e){ finish(false,"",null); }
 }
 /* ③ ip-api.com：经纬度 + 最近城市（兜底） */
+/* 和风 GeoAPI 按坐标反查行政区（单一数据源）：返回「市 + 区县」，
+   如 113.947,22.5416 → adm2=深圳、name=南山。IP 库只给到市级时靠它补到县区。 */
+function geoQwLookup(lat,lng,cb){
+  cb=cb||function(){};
+  if(!QWEATHER_KEY||!QWEATHER_HOST){ cb(false,null); return; }
+  var xhr=geoNewXhr();
+  if(!xhr){ cb(false,null); return; }
+  var done=false;
+  function fin(r){ if(done) return; done=true; try{ xhr.abort(); }catch(e){} cb(!!r,r||null); }
+  /* 保险：反查最多等 4 秒，超时按失败处理，避免定位链卡在这里 */
+  setTimeout(function(){ if(!done){ _log("[GeoQw] 超时"); fin(null); } },4000);
+  try{
+    try{ xhr.setTimeouts(8000,8000,8000,8000); }catch(e5){}
+    xhr.open("GET","https://"+QWEATHER_HOST+"/geo/v2/city/lookup?location="+lng+","+lat+"&key="+QWEATHER_KEY,true);
+    xhr.onreadystatechange=function(){
+      if(xhr.readyState!=4) return;
+      if(xhr.status!=200){ _log("[GeoQw] HTTP="+xhr.status); fin(null); return; }
+      try{
+        var t=String(xhr.responseText||"");
+        var m=/"location"\s*:\s*\[\s*\{([\s\S]*?)\}\s*\]/.exec(t);
+        if(!m){ _log("[GeoQw] 解析失败 len="+t.length); fin(null); return; }
+        var obj=m[1];
+        function fld(k){
+          var r=new RegExp("\""+k+"\"\\s*:\\s*\"([^\"]*)\"").exec(obj);
+          return r?r[1]:"";
+        }
+        var city=String(fld("adm2")||"").replace(/市$/,"");
+        var dist=String(fld("name")||"").replace(/(区|县|市|旗)$/,"");
+        if(dist===city) dist="";
+        /* 自治州/地区/盟全称太长（如"大理白族自治州大理"），
+           有县级名时显示县级名，天气仍按坐标查不受影响 */
+        if(/(自治州|地区|盟)$/.test(city) && dist){ city=dist; dist=""; }
+        if(!city) city=String(fld("adm1")||"").replace(/(省|市|自治区)$/,"");
+        if(!city){ fin(null); return; }
+        var qlat=parseFloat(fld("lat")), qlng=parseFloat(fld("lon"));
+        _log("[GeoQw] "+lat+","+lng+" → "+city+(dist||"")+" ("+qlat+","+qlng+")");
+        fin({city:city, district:dist, lat:isNaN(qlat)?lat:qlat, lng:isNaN(qlng)?lng:qlng});
+      }catch(e){ fin(null); }
+    };
+    xhr.send(null);
+  }catch(e){ fin(null); }
+}
 function geoIpapi(cb){
   cb=cb||function(){};
   var xhr=geoNewXhr();
@@ -3310,52 +3601,61 @@ function geoIpapi(cb){
       if(isNaN(lat)||isNaN(lng)||Math.abs(lat)>90||Math.abs(lng)>180){ finish(false,"",null); return; }
       var near=nearestCity(lat,lng,500);
       if(!near){ finish(false,"",null); return; }
-      finish(true,near.city,{lat:lat,lng:lng,km:near.km,raw:nm,src:"ipapi"});
+      /* IP 库通常只到市级（本机 ipip 的区字段为空，ip-api 给的是
+         "Keji yuan" 这类街道/园区名）。用和风按坐标反查行政区，
+         可得到「深圳南山」这样的县区级名称，天气也用和风自己的坐标。 */
+      geoQwLookup(lat,lng,function(qok,q){
+        var baseCity=(q&&q.city)||near.city||nm;
+        if(!baseCity){ finish(false,"",null); return; }
+        var name=baseCity;
+        if(q && q.district && q.district!==baseCity) name=baseCity+q.district;
+        finish(true,name,{
+          lat:(q&&q.lat)||lat, lng:(q&&q.lng)||lng,
+          km:near.km, raw:nm, src:"ipapi", temp:!cityMap[name]
+        });
+      });
     };
     xhr.send(null);
   }catch(e){ finish(false,"",null); }
 }
-/* 执行定位：① Windows 定位 → ② ipip 城市名 → ③ ip-api 坐标。
-   cb(ok, cityName, info)；ok/city/info 三参数须如实传给回调，
-   早前误写成 cb(ok,"",info) 导致 applyGeoCity("") 直接返回、定位静默失败。 */
+/* 执行定位：Windows 定位（WiFi/GPS）与 IP 链路并行，谁先给出结果用谁。
+   IP 链路：ip-api 坐标 → 和风按坐标反查县区（如「深圳南山」）→ ipip 城市名兜底。
+   并行是因为本机没有可用的定位提供程序时 Geolocator 会长时间不返回
+   （实测 15 秒无结果），不能让启动流程干等。 */
 function geoDetect(cb){
   cb=cb||function(){};
-  var done=false;
+  var done=false, ipStarted=false;
   function finish(ok,city,info){ if(done) return; done=true; cb(ok,city||"",info); }
+  function ipChain(){
+    if(ipStarted) return; ipStarted=true;
+    geoIpapi(function(ok,city,info){
+      if(ok){ finish(true,city,info); return; }
+      geoIpip(function(ok2,city2,info2){ finish(ok2,city2,info2); });
+    });
+  }
   geoWinLocation(function(ok,lat,lng,info){
     if(ok){
-      var mc=null;
-      if(info && (info.city||info.district)){
-        var cty=cityNameOf(info.city), dct=districtOf(info.district);
-        if(cty){
-          /* 只有明确匹配到区级城市时才直接采用；
-             district 为空或不匹配时不回退到市级，
-             让后面的 nearestCity 基于坐标找最近的区（如南山 vs 龙岗） */
-          if(dct && cityMap[cty+dct]){ mc=cty+dct; }
+      /* Windows 有坐标时同样交给和风反查行政区，结果口径与 IP 链路一致 */
+      geoQwLookup(lat,lng,function(qok,q){
+        var name="";
+        if(q && q.city){
+          name=q.city+((q.district && q.district!==q.city)?q.district:"");
+        }else if(info && info.city){
+          var cty=cityNameOf(info.city), dct=districtOf(info.district);
+          if(cty) name=cty+(dct||"");
         }
-      }
-      if(!mc){
-        /* 有真实城市名时直接采用（和风按坐标查天气，无需 cityMap） */
-        if(cty){
-          var geoCity=cty;
-          if(dct) geoCity=cty+dct;
-          finish(true, geoCity, {lat:lat, lng:lng, acc:info?info.acc:0, src:"win", temp:true});
-          return;
+        if(!name){
+          var near=nearestCity(lat,lng,500);
+          if(near) name=near.city;
         }
-        /* 兜底：nearestCity 扩大到 500km，避免边界城市定位失败 */
-        var near=nearestCity(lat,lng,500);
-        if(near) mc=near.city;
-      }
-      if(mc){ finish(true,mc,{lat:lat,lng:lng,km:0,acc:info?info.acc:0,src:"win"}); return; }
-    }
-    geoIpip(function(ok2,city2,info2){
-      if(ok2){ finish(true,city2,info2); return; }
-      geoIpapi(function(ok3,city3,info3){
-        if(ok3){ finish(true,city3,info3); return; }
-        finish(false,"",null);
+        if(name){ finish(true,name,{lat:lat,lng:lng,km:0,acc:info?info.acc:0,src:"win",temp:!cityMap[name]}); return; }
+        ipChain();
       });
-    });
+      return;
+    }
+    ipChain();
   });
+  ipChain();
 }
 /* 定位成功后应用城市并落盘 */
 function applyGeoCity(cityName){
@@ -3390,6 +3690,7 @@ function tryAutoGeo(silent){
   if(!silent && tip) tip.innerHTML="正在自动定位…";
   geoDetect(function(ok,cityName,info){
     var box=document.getElementById("geoRow");
+    _log("[Geo] ok="+ok+" city="+(cityName||"")+" src="+(info&&info.src)+" lat="+(info&&info.lat)+" lng="+(info&&info.lng)+" cfg.city="+cfg.city);
     if(ok){
       /* 只在启动时的静默自动定位中防止降级：避免 IP 定位把"深圳龙岗"降级为"深圳"。
          手动点「重新定位」时用户明确要更新位置，不阻止降级/换区。 */
@@ -3418,7 +3719,7 @@ function tryAutoGeo(silent){
       }
       whenIdle(function(){
         fetchWeather(true);
-        fetchLive();
+        if(!QWEATHER_KEY) fetchLive();
         if(box) updateGeoRow();
         redrawCurrent();
       });
@@ -3545,7 +3846,7 @@ function tick(){
     }
     lastTodayKey=key;
     fetchWeather(true);
-    fetchLive();
+    if(!QWEATHER_KEY) fetchLive();
   }else if(!inMonthView && isToday(cur.getFullYear(),cur.getMonth()+1,cur.getDate()) && key!=renderedYMD){
     renderDay();
   }
@@ -3559,9 +3860,12 @@ function tick(){
   var nowMs=n.getTime();
   if(nowMs-lastLiveTs>=10*60*1000){
     lastLiveTs=nowMs;
-    fetchLive();
-    fetchTyphoon();
-    fetchOfficialLive();
+    /* 和风有 key 时 fetchQWeather 已覆盖实况+预警，不再调 backup 源 */
+    if(!QWEATHER_KEY){
+      fetchLive();
+      fetchTyphoon();
+      fetchOfficialLive();
+    }
   }
 }
 var lastLiveTs=0;
@@ -3821,13 +4125,41 @@ function setAutostart(on){
 }
 /* ============================================================
    台风信息（中国气象局台风网 typhoon.nmc.cn，免密钥、支持 HTTP）
-   注意：暴雨/高温/雷电等各类气象预警目前没有免密钥的 HTTP 接口，
-   只能覆盖台风。如需其它预警类型，只能后续接入带 key 的商业 API。
+   和风 weatheralert 已覆盖台风/高温/暴雨/大风/雷电/寒潮/沙尘暴等
+   所有预警类型，作为优先来源；nmc 仅作为远洋台风跟踪的补充。
    ============================================================ */
 var TYPHOON_URL="http://typhoon.nmc.cn/weatherservice/typhoon/jsons/list_default";
 var TYPHOONS=[];          /* 活跃台风 [{cn,en,num}] */
 var TYPHOON_AT="";
 var TYPHOON_STATUS={TS:"热带风暴",STS:"强热带风暴",TY:"台风",STY:"强台风",SuperTY:"超强台风",TD:"热带低压"};
+/* 16 方位移向映射 */
+var TYPHOON_DIR={N:"北",NNE:"北东北",NE:"东北",ENE:"东东北",E:"东",ESE:"东东南",SE:"东南",SSE:"南东南",
+  S:"南",SSW:"南西南",SW:"西南",WSW:"西西南",W:"西",WNW:"西西北",NW:"西北",NNW:"北西北"};
+/* 解析单个台风详情（view_{id}），返回最新轨迹点的强度/风速/气压/位置/移向移速 */
+function parseTyphoonDetail(txt){
+  try{
+    /* 去掉 JSONP 包裹 typhoon_jsons_view_xxx({...}) */
+    var s=txt, i=s.indexOf("{"), j=s.lastIndexOf("}");
+    if(i<0||j<0||j<=i) return null;
+    var d=JSON.parse(s.substring(i,j+1));
+    var arr=d&&d.typhoon;
+    if(!arr||!arr.length||!arr[8]||!arr[8].length) return null;
+    var tp=arr[8][arr[8].length-1];   /* 最新轨迹点 */
+    if(!tp||tp.length<10) return null;
+    var lvCode=String(tp[3]||"");
+    return {
+      time:String(tp[1]||""),
+      intensity:TYPHOON_STATUS[lvCode]||lvCode,
+      lon:tp[4], lat:tp[5],
+      pressure:tp[6], wind:tp[7],
+      moveDir:TYPHOON_DIR[String(tp[8]||"")]||String(tp[8]||""),
+      moveSpeed:tp[9]
+    };
+  }catch(e){ return null; }
+}
+/* 和风实时气象预警（高温/暴雨/大风/雷电/寒潮/沙尘暴/大雾/霾/台风…） */
+var LAST_ALERTS=[];         /* [{eventType:{code,name}, severity, headline, description, color:{code}, issuedTime}] */
+var LAST_ALERTS_AT="";
 /* 把 JSONP 里的一条数组按顶层逗号切分，正确跳过引号与嵌套括号 */
 function splitTopLevel(s){
   var out=[], buf="", i, c, depth=0, q=false;
@@ -3892,36 +4224,138 @@ function parseTyphoonList(txt){
 function fetchTyphoon(cb){
   cb=cb||function(){};
   xhrGet(TYPHOON_URL,function(ok,data){
-    if(ok&&data&&data.text){
-      var t=parseTyphoonList(data.text);
-      if(t){ TYPHOONS=t; TYPHOON_AT=nowClock(); whenIdle(function(){ renderTyphoonLine(); }); }
+    if(ok&&data){
+      var txt=data.text||"";
+      /* nmc 返回 Content-Type: application/octet-stream，无 charset；
+         ServerXMLHTTP.responseText 会按系统代码页（中文系统为 GBK）解码 UTF-8 字节，
+         导致台风中文名乱码，typhoonLabel 退化成"2630号"这类无意义编号。
+         用 ADODB.Stream 强制按 UTF-8 解码 responseBody，拿到正确中文名。 */
+      if(data.body){ try{
+        var stm=new ActiveXObject("ADODB.Stream");
+        stm.Type=1; stm.Open(); stm.Write(data.body);
+        stm.Position=0; stm.Type=2; stm.Charset="utf-8";
+        txt=stm.ReadText(); stm.Close();
+      }catch(e){} }
+      var t=parseTyphoonList(txt);
+      if(t){
+        TYPHOONS=t; TYPHOON_AT=nowClock();
+        /* 先渲染一版（仅有名称），再逐个补详情 */
+        whenIdle(function(){ renderTyphoonLine(); });
+        /* 逐个拉详情：强度/风速/气压/位置/移向移速。
+           每个详情回来就更新对应台风并重渲染，避免一个失败拖累全部。 */
+        for(var di=0;di<TYPHOONS.length;di++){
+          (function(idx){
+            var ty=TYPHOONS[idx];
+            if(!ty||!ty.id) return;
+            xhrGet("http://typhoon.nmc.cn/weatherservice/typhoon/jsons/view_"+ty.id,function(dok,ddata){
+              if(!dok||!ddata) return;
+              var dtxt=ddata.text||"";
+              if(ddata.body){ try{
+                var s2=new ActiveXObject("ADODB.Stream");
+                s2.Type=1; s2.Open(); s2.Write(ddata.body);
+                s2.Position=0; s2.Type=2; s2.Charset="utf-8";
+                dtxt=s2.ReadText(); s2.Close();
+              }catch(e2){} }
+              var det=parseTyphoonDetail(dtxt);
+              if(det){
+                var cur=TYPHOONS[idx];
+                if(cur){
+                  cur.intensity=det.intensity; cur.wind=det.wind; cur.pressure=det.pressure;
+                  cur.lat=det.lat; cur.lon=det.lon;
+                  cur.moveDir=det.moveDir; cur.moveSpeed=det.moveSpeed; cur.time=det.time;
+                  cur.src="nmc";   /* 远洋跟踪，非本地预警 */
+                }
+                whenIdle(function(){ renderTyphoonLine(); });
+              }
+            });
+          })(di);
+        }
+      }
     }
     cb(ok);
   });
 }
-/* 单个台风的展示名。
-   中国气象局的列表里，尚未命名的系统其 cn 字段可能是空串或占位内容，
-   因此只接受含中文的名字；否则退回用编号，避免显示出"毒毙"这类无意义名称。 */
+/* 单个台风的展示文案。
+   - nmc 来源（远洋跟踪）：名称（强度）· 风速 · 气压 · 位置 · 移向移速
+   - alert 来源（本地预警）：名称（严重程度）+ 描述 */
 function typhoonLabel(t){
-  var cn=String(t.cn||""), num=String(t.num||""), lv=t.level||"编号中";
-  var nm=(/[\u4e00-\u9fa5]/.test(cn))?cn:((num)?num+"号":"");
-  if(nm && lv && lv!=="编号中") return nm+"（"+lv+"）";
-  return nm||"新台风";
+  var cn=String(t.cn||""), num=String(t.num||"");
+  var nm=(/[\u4e00-\u9fa5]/.test(cn))?cn:((num)?num+"号":"新台风");
+  /* 本地台风预警：和风给的是严重程度 + 描述 */
+  if(t.src==="alert"){
+    var sevMap={extreme:"特别严重",severe:"严重",moderate:"中等",minor:"轻微",unknown:""};
+    var sev=t.level&&sevMap[t.level]?sevMap[t.level]:"";
+    return nm+(sev?("（"+sev+"）"):"")+(t.desc?("："+t.desc):"");
+  }
+  /* nmc 远洋跟踪：强度/风速/气压/位置/移向 */
+  var parts=[];
+  if(t.intensity) parts.push(t.intensity);
+  if(t.wind!=null) parts.push(Math.round(t.wind*10)/10+"m/s");
+  if(t.pressure!=null) parts.push(t.pressure+"hPa");
+  if(t.lat!=null&&t.lon!=null) parts.push(t.lat+"°N "+t.lon+"°E");
+  if(t.moveDir&&t.moveSpeed!=null) parts.push(t.moveDir+" "+t.moveSpeed+"km/h");
+  if(parts.length) return nm+"（"+parts.join(" · ")+"）";
+  return nm;
 }
 /* 台风提示文案；无台风返回空串 */
 function typhoonText(){
   if(!TYPHOONS.length) return "";
   var a=[], i;
   for(i=0;i<TYPHOONS.length;i++){ a.push(typhoonLabel(TYPHOONS[i])); }
-  return a.join("、");
+  return a.join("；");
 }
-/* 渲染独立的台风预警行：正常天气信息不再被覆盖 */
+/* 渲染独立的台风行。
+   nmc 远洋跟踪用 🌀 蓝色信息风（不是本地预警，不制造恐慌）；
+   和风本地台风预警用 ⚠ 红色警示风。 */
 function renderTyphoonLine(){
   var el=document.getElementById("tyLine");
   if(!el) return;
   var t=typhoonText();
   if(!t){ el.style.display="none"; el.innerHTML=""; return; }
-  el.innerHTML="<span class='tyBox' title='⚠ 台风："+escHtml(t)+"'>⚠ 台风 "+escHtml(t)+"</span>";
+  /* 任意一个台风来自本地预警，就用警示样式 */
+  var isAlert=false, i;
+  for(i=0;i<TYPHOONS.length;i++){ if(TYPHOONS[i].src==="alert"){ isAlert=true; break; } }
+  var icon=isAlert?"⚠":"🌀";
+  var cls="tyBox"+(isAlert?" tyAlert":"");
+  var prefix=isAlert?"台风预警":"台风";
+  el.innerHTML="<span class='"+cls+"' title='"+icon+" "+prefix+"："+escHtml(t)+(TYPHOON_AT?("（"+TYPHOON_AT+" 更新）"):"")+"'>"
+              +icon+" "+prefix+" "+escHtml(t)+"</span>";
+  el.style.display="block";
+}
+/* 和风实时气象预警行：高温/暴雨/大风/雷电/寒潮/沙尘暴/大雾/霾/干旱/冰雹等。
+   按严重程度（severe/extreme 优先）取前 3 条，颜色来自和风预警 color.code。 */
+var ALERT_COLORS={blue:"#1565c0",yellow:"#f9a825",amber:"#ef6c00",orange:"#d84315",red:"#c62828",purple:"#6a1b9a",white:"#424242",gray:"#616161",green:"#2e7d32",black:"#212121"};
+var ALERT_SEVERITY_ORDER={extreme:0, severe:1, moderate:2, minor:3, unknown:4};
+function renderAlerts(){
+  var el=document.getElementById("alertLine");
+  if(!el) return;
+  if(!LAST_ALERTS || !LAST_ALERTS.length){ el.style.display="none"; el.innerHTML=""; return; }
+  /* 台风已在 tyLine 单独显示，不在 alertLine 重复 */
+  var nonTy=[], i;
+  for(i=0;i<LAST_ALERTS.length;i++){
+    var a=LAST_ALERTS[i];
+    if(a.eventType && (a.eventType.code==="1001" || a.eventType.name==="台风")) continue;
+    nonTy.push(a);
+  }
+  if(!nonTy.length){ el.style.display="none"; el.innerHTML=""; return; }
+  nonTy.sort(function(a,b){
+    var sa=ALERT_SEVERITY_ORDER[a.severity]!=null?ALERT_SEVERITY_ORDER[a.severity]:9;
+    var sb=ALERT_SEVERITY_ORDER[b.severity]!=null?ALERT_SEVERITY_ORDER[b.severity]:9;
+    return sa-sb;
+  });
+  var shown=nonTy.slice(0,3);
+  var html="";
+  for(i=0;i<shown.length;i++){
+    var al=shown[i];
+    var c=al.color&&al.color.code?ALERT_COLORS[al.color.code]:"#c62828";
+    var bg=al.color&&al.color.code?(al.color.code==="blue"?"#e3f2fd":al.color.code==="yellow"?"#fffde7":al.color.code==="amber"?"#fff8e1":al.color.code==="orange"?"#fbe9e7":al.color.code==="red"?"#ffebee":al.color.code==="purple"?"#f3e5f5":"#ffebee"):"#ffebee";
+    var label=al.eventType?al.eventType.name:"预警";
+    var sevMap={extreme:"特别严重", severe:"严重", moderate:"中等", minor:"轻微", unknown:""};
+    var sevTxt=al.severity&&sevMap[al.severity]?(" "+sevMap[al.severity]):"";
+    var title=(al.description||al.headline||label)+(LAST_ALERTS_AT?(" （"+LAST_ALERTS_AT+" 更新）"):"");
+    html+="<span class='alertBox' style='color:"+c+";background:"+bg+";border-color:"+c+";' title='"+escHtml(title)+"'>⚠ "+escHtml(label+sevTxt)+"</span>　";
+  }
+  el.innerHTML=html;
   el.style.display="block";
 }
 /* ============================================================
@@ -4153,7 +4587,7 @@ try{ window.onresize=onWinResize; }catch(e){}
       /* 重置全部天气缓存，否则新城市名会配旧城市的天气/实况/AQI，
          出现"北京 多云"却显示广州温度的串城市错误 */
       lastWeather=null; weatherFailed=false; live=null; lastOfficialType="";
-      fetchWeather(true); fetchLive();
+      fetchWeather(true); if(!QWEATHER_KEY) fetchLive();
     }
     settingsCity="";
     /* 每周起始日与城市无关，单独设置并始终落盘 */
@@ -4228,14 +4662,14 @@ try{ window.onresize=onWinResize; }catch(e){}
   };
   showView(false);
   lastTodayKey=todayKeyOf(new Date());
-  defer(function(){ fetchWeather(true); fetchLive(); }, 400);
+  defer(function(){ fetchWeather(true); if(!QWEATHER_KEY) fetchLive(); }, 400);
   /* 每次启动静默自动定位（IP 城市名变短时保留原区级城市）；
      用户在设置里手动选过城市（manualCity=1）则尊重其选择，不自动定位覆盖 */
   if(!cfg.manualCity) defer(function(){ tryAutoGeo(true); }, 700);
   /* 防"显示桌面"隐藏：窗口若被系统最小化/隐藏，自动还原（用户无法手动最小化，不抢操作） */
   defer(function(){ try{ bindAutoRestore(); }catch(e){} }, 1500);
-  defer(function(){ fetchTyphoon(); }, 900);
-  defer(function(){ fetchLive(); }, 2500);
+  /* 和风有 key 时 typhoon.nmc.cn / wttr.in 都降级为 backup */
+  defer(function(){ if(!QWEATHER_KEY){ fetchTyphoon(); fetchLive(); } }, 900);
   /* 调休安排：启动后延迟同步（避开 onload 阶段的请求限制），之后每天复查一次 */
   defer(function(){ syncHolidays(false, function(st,updated){ if(updated) redrawCurrent(); }); }, 1200);
   tickTimer=setInterval(tick,30000);
