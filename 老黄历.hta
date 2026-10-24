@@ -124,6 +124,11 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
 .wsvg.moon{width:44px;height:44px;margin-right:8px;vertical-align:-9px;}
 .wsvg.sm{width:23px;height:23px;margin-right:2px;vertical-align:-3px;}
 #moonLine{font-size:17px;margin:0;line-height:44px;}
+/* 真实月球照片 + SVG 阴影叠层：与天气预报的黄色矢量太阳图标从材质上区分开 */
+.moonWrap{position:relative;display:inline-block;width:44px;height:44px;vertical-align:-9px;margin-right:8px;}
+/* 照片放大到 43px：让图中月轮（约94%幅面）顶满 40px 裁切圆，消除月轮外的黑天空环 */
+.moonWrap img{position:absolute;left:0.5px;top:0.5px;width:43px;height:43px;border-radius:50%;}
+.moonWrap svg{position:absolute;left:0;top:0;width:44px;height:44px;}
 #sunLine{margin-top:2px;}
 /* 未来五天天气 */
 .fc5{margin-top:5px;padding-top:4px;border-top:1px dashed #d8b877;}
@@ -705,35 +710,83 @@ function cDay(d){
 var PAP="#f7f0dc"; /* 纸面底色，用作月相阴影，与背景无缝融合 */
 var MSVGH='<svg class="wsvg moon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">';
 var MDISC='<circle cx="16" cy="16" r="13" fill="#f4c542"/>';
-/* 农历初一起月相。亮面比例按农历日连续计算（朔望周期 29.53 天），
+/* 农历初一起月相名称 */
+function moonPhaseName(ld){
+  if(ld==1) return "新月(朔)";
+  if(ld>=15&&ld<=16) return "满月(望)";
+  if(ld<=6) return "娥眉月";
+  if(ld<=8) return "上弦月";
+  if(ld<15) return "盈凸月";
+  if(ld<=21) return "亏凸月";
+  if(ld<=23) return "下弦月";
+  return "残月";
+}
+/* 矢量画法兜底（无 moon.jpg 时）。亮面比例按农历日连续计算（朔望周期 29.53 天），
    盈（娥眉/上弦/盈凸）亮面在【右】，亏（亏凸/下弦/残）亮面在【左】。
    亮面=月盘半圆+terminator 大半径圆（rx=ry 圆形弧，IE9 可靠），
    半径 L=13/|1-2p|：p→0/1 时 L→13（半圆重合=无亮/满圆），p→0.5 时 L→∞（直线=半亮），
    圆弧围出标准月牙（中间宽、两端尖）。 */
-function moonPhase(ld){
-  var s="", name="";
-  if(ld==1){ s='<circle cx="16" cy="16" r="13" fill="none" stroke="#c9a063" stroke-width="2" stroke-dasharray="3 3"/>'; name="新月(朔)"; }
-  else if(ld>=15&&ld<=16){ s=MDISC; name="满月(望)"; }
+function moonPhaseSvg(ld,name){
+  var s="";
+  if(ld==1){ s='<circle cx="16" cy="16" r="13" fill="none" stroke="#c9a063" stroke-width="2" stroke-dasharray="3 3"/>'; }
+  else if(ld>=15&&ld<=16){ s=MDISC; }
   else{
     var p=(1-Math.cos(2*Math.PI*(ld-1)/29.53))/2; /* 亮面比例 0..1 */
     var L=13/Math.max(Math.abs(1-2*p),0.02);      /* terminator 半径，13..650 */
     if(L>999) L=999;
     var Ls=L.toFixed(2);
-    if(ld<=16){ /* 盈：亮右。p≤0.5 terminator 小弧经右侧(sweep0)，p>0.5 经左侧(sweep1) */
+    if(ld<15){ /* 盈：亮右。p≤0.5 terminator 小弧经右侧(sweep0)，p>0.5 经左侧(sweep1) */
       var sw=(p<=0.5)?0:1;
       s='<path d="M16,3A13,13 0 0,1 16,29A'+Ls+','+Ls+' 0 0,'+sw+' 16,3Z" fill="#f4c542"/>';
-      if(ld<=6) name="娥眉月";
-      else if(ld<=8) name="上弦月";
-      else name="盈凸月";
     } else { /* 亏：亮左（手写镜像，不用 transform）。p≤0.5 小弧经左侧(sweep1)，p>0.5 经右侧(sweep0) */
       var sw=(p<=0.5)?1:0;
       s='<path d="M16,3A13,13 0 0,0 16,29A'+Ls+','+Ls+' 0 0,'+sw+' 16,3Z" fill="#f4c542"/>';
-      if(ld<=21) name="亏凸月";
-      else if(ld<=23) name="下弦月";
-      else name="残月";
     }
   }
-  return [MSVGH+s+"</svg>", name];
+  return MSVGH+s+"</svg>";
+}
+var moonImgState=-1; /* -1 未检测, 0 无图, 1 有图 */
+function moonImgOk(){
+  if(moonImgState>=0) return moonImgState===1;
+  var ok=false;
+  try{
+    var fso=new ActiveXObject("Scripting.FileSystemObject");
+    var f=appFolder();
+    ok=!!f && fso.FileExists(f+"\\images\\moon.jpg");
+  }catch(e){}
+  moonImgState=ok?1:0;
+  return ok;
+}
+/* 月相图标：真实月球照片(images/moon.jpg) + SVG 纸色遮罩叠层。
+   遮罩=月盘减亮面，用不透明纸底色(PAP)盖住照片暗部 → 只露亮面，与背景无缝融合；
+   外圈再叠 3px 纸色环，盖住照片裁切圆与遮罩圆在缩放下的亚像素缝隙（暗部轮廓线）。
+   与亮面共用同一 terminator 曲线：盈（亮右）遮左，亏（亮左）遮右；满月不遮。 */
+function moonPhase(ld){
+  var name=moonPhaseName(ld);
+  if(!moonImgOk()) return [moonPhaseSvg(ld,name), name];
+  var sh="";
+  if(ld==1){ /* 新月：整盘遮住，留虚线轮廓示意 */
+    sh='<circle cx="22" cy="22" r="20" fill="'+PAP+'"/>'
+      +'<circle cx="22" cy="22" r="18.5" fill="none" stroke="#c9a063" stroke-width="1.5" stroke-dasharray="3 3"/>';
+  }else{
+    if(ld<15||ld>16){
+      var p=(1-Math.cos(2*Math.PI*(ld-1)/29.53))/2;
+      var L=20/Math.max(Math.abs(1-2*p),0.02);
+      if(L>999) L=999;
+      var Ls=L.toFixed(2);
+      if(ld<15){ /* 盈：遮左 */
+        var sw=(p<=0.5)?0:1;
+        sh='<path d="M22,2A20,20 0 0,0 22,42A'+Ls+','+Ls+' 0 0,'+sw+' 22,2Z" fill="'+PAP+'"/>';
+      }else{ /* 亏：遮右 */
+        var sw=(p<=0.5)?1:0;
+        sh='<path d="M22,2A20,20 0 0,1 22,42A'+Ls+','+Ls+' 0 0,'+sw+' 22,2Z" fill="'+PAP+'"/>';
+      }
+    }
+    /* 纸色外环：覆盖 r19..22，抹掉月盘外沿的一切残留轮廓（新月除外） */
+    sh+='<circle cx="22" cy="22" r="20.5" fill="none" stroke="'+PAP+'" stroke-width="3"/>';
+  }
+  return ['<span class="moonWrap"><img src="images/moon.jpg" alt=""/>'
+    +'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 44 44">'+sh+'</svg></span>', name];
 }
 
 /* 日出日落（NOAA 算法，按东八区输出） */
@@ -2144,9 +2197,21 @@ function renderDay(){
 function escHtml(s){
   return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 }
-/* [DEBUG] mshta 无 console，日志写到同目录 qw_debug.log。
-   功能稳定后已关闭输出；需要调试时把下面一行改回函数体即可。 */
-function _log(s){ /* no-op */ }
+/* 调试日志：追加写 qw_debug.log，超过 256KB 截断重写，避免无限增长 */
+function _log(s){
+  try{
+    var folder=appFolder(); if(!folder) return;
+    var fso=fsoObj(); if(!fso) return;
+    var p=folder+"\\qw_debug.log";
+    if(fso.FileExists(p) && fso.GetFile(p).Size>262144) fso.DeleteFile(p);
+    var t=new Date();
+    var ts=t.getFullYear()+"-"+("0"+(t.getMonth()+1)).slice(-2)+"-"+("0"+t.getDate()).slice(-2)
+      +" "+("0"+t.getHours()).slice(-2)+":"+("0"+t.getMinutes()).slice(-2)+":"+("0"+t.getSeconds()).slice(-2);
+    var f=fso.OpenTextFile(p,8,true); /* 8=ForAppending */
+    f.Write("["+ts+"] "+s+"\r\n");
+    f.Close();
+  }catch(e){}
+}
 
 function renderWeatherLine(y,m,d){
   var el=document.getElementById("weatherLine");
@@ -3419,14 +3484,89 @@ var GEOLOC_PS1=
 "$ErrorActionPreference='Stop'\r\n"+
 "function Esc($s){ if($null -eq $s){return ''}; $sb=New-Object System.Text.StringBuilder; foreach($ch in $s.ToString().ToCharArray()){ $cc=[int]$ch; if($cc -lt 128){[void]$sb.Append($ch)}else{[void]$sb.AppendFormat('\\u{0:X4}',$cc)} }; $sb.ToString() }\r\n"+
 "try{\r\n"+
+"  $fout=$args[0]\r\n"+
+"  try{ Start-Process -WindowStyle Hidden -FilePath 'cmd.exe' -ArgumentList '/c',('ping -n 45 127.0.0.1 >nul & taskkill /f /pid '+$PID+' >nul 2>nul') | Out-Null }catch{}\r\n"+
+"  [Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12\r\n"+
+"  function RdVar($buf,$p){\r\n"+
+"    [int64]$v=0; [int]$sh=0\r\n"+
+"    while($true){ $b=$buf[$p]; $p++; $v=$v -bor (([int64]($b -band 0x7F)) -shl $sh); if(($b -band 0x80) -eq 0){ break }; $sh+=7; if($sh -gt 63){ break } }\r\n"+
+"    return @($v,$p)\r\n"+
+"  }\r\n"+
+"  function TryWloc{\r\n"+
+"    try{\r\n"+
+"      $b0=((netsh wlan show interfaces | Select-String 'AP BSSID *: *([0-9A-Fa-f:]{17})') | ForEach-Object { $_.Matches[0].Groups[1].Value } | Select-Object -First 1)\r\n"+
+"      $cands=New-Object System.Collections.ArrayList\r\n"+
+"      if($b0){ [void]$cands.Add($b0.ToLower()) }\r\n"+
+"      (netsh wlan show networks mode=bssid | Select-String 'BSSID +[0-9]+ *: *([0-9A-Fa-f:]{17})') | ForEach-Object { $x=$_.Matches[0].Groups[1].Value.ToLower(); if(($cands.Count -lt 6) -and (-not $cands.Contains($x))){ [void]$cands.Add($x) } }\r\n"+
+"      if($cands.Count -eq 0){ return $false }\r\n"+
+"      $pb=New-Object IO.MemoryStream; $pw=New-Object IO.BinaryWriter($pb)\r\n"+
+"      foreach($m in $cands){ $mb=[Text.Encoding]::ASCII.GetBytes($m); $pw.Write([byte]0x12); $pw.Write([byte](2+$mb.Length)); $pw.Write([byte]0x0A); $pw.Write([byte]$mb.Length); $pw.Write($mb) }\r\n"+
+"      $pw.Write([byte]0x18); $pw.Write([byte]0x00); $pw.Write([byte]0x20); $pw.Write([byte]0x01); $pw.Flush()\r\n"+
+"      $pbb=$pb.ToArray(); if($pbb.Length -gt 250){ return $false }\r\n"+
+"      $ms=New-Object IO.MemoryStream; $bw=New-Object IO.BinaryWriter($ms)\r\n"+
+"      $bw.Write([byte[]](0,1,0,5)); $bw.Write([Text.Encoding]::ASCII.GetBytes('en_US'))\r\n"+
+"      $bw.Write([byte[]](0,0x13)); $bw.Write([Text.Encoding]::ASCII.GetBytes('com.apple.locationd'))\r\n"+
+"      $bw.Write([byte[]](0,0x0a)); $bw.Write([Text.Encoding]::ASCII.GetBytes('8.1.12B411'))\r\n"+
+"      $bw.Write([byte[]](0,0,0,1,0,0,0)); $bw.Write([byte]$pbb.Length); $bw.Write($pbb); $bw.Flush()\r\n"+
+"      $body=$ms.ToArray()\r\n"+
+"      $req=[Net.HttpWebRequest]::Create('https://gs-loc.apple.com/clls/wloc')\r\n"+
+"      $req.Method='POST'; $req.ContentType='application/x-www-form-urlencoded'; $req.UserAgent='locationd/1753.17 CFNetwork/889.9 Darwin/17.2.0'; $req.Timeout=6000; $req.ReadWriteTimeout=6000; $req.ContentLength=$body.Length\r\n"+
+"      $rs=$req.GetRequestStream(); $rs.Write($body,0,$body.Length); $rs.Close()\r\n"+
+"      $resp=$req.GetResponse(); $ms2=New-Object IO.MemoryStream; $resp.GetResponseStream().CopyTo($ms2); $resp.Close(); $buf=$ms2.ToArray()\r\n"+
+"      if($buf.Length -lt 14){ return $false }\r\n"+
+"      $first=$null; $best=$null; $p=10\r\n"+
+"      while($p -lt $buf.Length){\r\n"+
+"        $tag=$buf[$p]; $p++; $fld=$tag -shr 3; $wir=$tag -band 7\r\n"+
+"        if($wir -eq 2){\r\n"+
+"          $r=RdVar $buf $p; $len=$r[0]; $p=$r[1]; $end=$p+$len\r\n"+
+"          if($fld -eq 2){\r\n"+
+"            $q=$p; $db=''; $la=$null; $lo=$null; $ac=0\r\n"+
+"            while($q -lt $end){\r\n"+
+"              $t2=$buf[$q]; $q++; $f2=$t2 -shr 3; $w2=$t2 -band 7\r\n"+
+"              if($w2 -eq 2){ $r=RdVar $buf $q; $l2=$r[0]; $q=$r[1]; $e2=$q+$l2\r\n"+
+"                if($f2 -eq 1){ $db=[Text.Encoding]::ASCII.GetString($buf,$q,$l2).ToLower() }\r\n"+
+"                elseif($f2 -eq 2){ $rr=$q\r\n"+
+"                  while($rr -lt $e2){ $t3=$buf[$rr]; $rr++; $f3=$t3 -shr 3; $w3=$t3 -band 7\r\n"+
+"                    if($w3 -eq 0){ $r=RdVar $buf $rr; $vv=$r[0]; $rr=$r[1]; if($f3 -eq 1){ $la=$vv } elseif($f3 -eq 2){ $lo=$vv } elseif($f3 -eq 3){ $ac=$vv } }\r\n"+
+"                    elseif($w3 -eq 2){ $r=RdVar $buf $rr; $rr=$r[1]+$r[0] } elseif($w3 -eq 5){ $rr+=4 } else { $rr+=8 } }\r\n"+
+"                }\r\n"+
+"                $q=$e2\r\n"+
+"              } elseif($w2 -eq 0){ $r=RdVar $buf $q; $q=$r[1] } elseif($w2 -eq 5){ $q+=4 } else { $q+=8 }\r\n"+
+"            }\r\n"+
+"            if(($null -ne $la) -and ($null -ne $lo)){ $aa=[double]$la/1e8; $oo=[double]$lo/1e8\r\n"+
+"              if(-not (($aa -eq -180) -and ($oo -eq -180))){\r\n"+
+"                $rec=New-Object PSObject; $rec|Add-Member NoteProperty b $db; $rec|Add-Member NoteProperty a $aa; $rec|Add-Member NoteProperty o $oo; $rec|Add-Member NoteProperty c $ac\r\n"+
+"                if($null -eq $first){ $first=$rec }\r\n"+
+"                if($b0 -and ($db -eq $b0.ToLower())){ $best=$rec }\r\n"+
+"              }\r\n"+
+"            }\r\n"+
+"          }\r\n"+
+"          $p=$end\r\n"+
+"        } elseif($wir -eq 0){ $r=RdVar $buf $p; $p=$r[1] } elseif($wir -eq 5){ $p+=4 } else { $p+=8 }\r\n"+
+"      }\r\n"+
+"      if($null -eq $best){ $best=$first }\r\n"+
+"      if($null -ne $best){ [IO.File]::WriteAllText($fout,('{0},{1},{2},,,wloc' -f $best.a,$best.o,[int]$best.c)); return $true }\r\n"+
+"    }catch{}\r\n"+
+"    return $false\r\n"+
+"  }\r\n"+
+"  if(TryWloc){ exit }\r\n"+
 "  Add-Type -AssemblyName System.Runtime.WindowsRuntime | Out-Null\r\n"+
 "  $null=[Windows.Devices.Geolocation.Geolocator,Windows.Devices.Geolocation,ContentType=WindowsRuntime]\r\n"+
 "  $null=[Windows.Devices.Geolocation.Geoposition,Windows.Devices.Geolocation,ContentType=WindowsRuntime]\r\n"+
 "  $m=([System.WindowsRuntimeSystemExtensions].GetMethods()|Where-Object{$_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'})[0]\r\n"+
-"  function Await($t,$rt){ $a=$m.MakeGenericMethod($rt); $n=$a.Invoke($null,@($t)); if(-not $n.Wait(18000)){ throw 'timeout' }; $n.Result }\r\n"+
-"  try{ Start-Process -WindowStyle Hidden -FilePath 'cmd.exe' -ArgumentList '/c',('ping -n 24 127.0.0.1 >nul & taskkill /f /pid '+$PID+' >nul 2>nul') | Out-Null }catch{}\r\n"+
 "  $l=New-Object Windows.Devices.Geolocation.Geolocator\r\n"+
-"  $p=Await ($l.GetGeopositionAsync()) ([Windows.Devices.Geolocation.Geoposition])\r\n"+
+"  $task=$l.GetGeopositionAsync()\r\n"+
+"  $am=$m.MakeGenericMethod([Windows.Devices.Geolocation.Geoposition])\r\n"+
+"  $n=$am.Invoke($null,@($task))\r\n"+
+"  $st=''\r\n"+
+"  $deadline=(Get-Date).AddSeconds(8)\r\n"+
+"  while((Get-Date) -lt $deadline){\r\n"+
+"    $st=$l.LocationStatus.ToString()\r\n"+
+"    if($n.Wait(600)){ break }\r\n"+
+"    if($st -eq 'Disabled' -or $st -eq 'NotAvailable'){ break }\r\n"+
+"  }\r\n"+
+"  if(-not $n.IsCompleted){ [IO.File]::WriteAllText($args[0],('FAIL,status='+$st)); exit }\r\n"+
+"  $p=$n.Result\r\n"+
 "  $c=$p.Coordinate.Point.Position\r\n"+
 "  $out=('{0},{1},{2}' -f $c.Latitude,$c.Longitude,$p.Coordinate.Accuracy)\r\n"+
 "  try{\r\n"+
@@ -3442,7 +3582,7 @@ var GEOLOC_PS1=
 "    $out=$out+','+(Esc $pr.city)+','+(Esc $pr.district)\r\n"+
 "  }catch{}\r\n"+
 "  [IO.File]::WriteAllText($args[0],$out)\r\n"+
-"}catch{}\r\n";
+"}catch{ try{ [IO.File]::WriteAllText($args[0],('FAIL,err='+$_.Exception.Message)) }catch{} }\r\n";
 /* 防"显示桌面"隐藏：本窗口无任务栏按钮（SHOWINTASKBAR=no）、无最小化按钮，
    用户无法主动最小化——若窗口被系统隐藏（Win+D / 任务栏"显示桌面"），自动还原。
    只在窗口尺寸"从正常骤降到极小"（最小化/隐藏的特征）时触发一次，
@@ -3562,17 +3702,19 @@ function geoWinLocation(cb){
   try{ s.Run(cmd,0,false); }catch(e){ _log("[GeoWin] FAIL: Run 失败 "+e.message); cb(false,0,0,null); return; }
   var waited=0;
   function poll(){
-    if(waited>21000){ _log("[GeoWin] 超时，未拿到坐标（本机定位提供程序无响应）"); cb(false,0,0,null); return; }
+    if(waited>35000){ _log("[GeoWin] 超时：35 秒内脚本未写出结果文件"); cb(false,0,0,null); return; }
     waited+=600;
     try{
       if(fsoObj() && fso.FileExists(outFile)){
         var f2=fso.OpenTextFile(outFile,1), t=String(f2.ReadAll()||""); f2.Close();
         try{ fso.DeleteFile(outFile); }catch(e3){}
+        if(/^FAIL,/.test(t)){ _log("[GeoWin] 脚本返回 "+t.substring(0,150)); cb(false,0,0,null); return; }
         var parts=String(t).split(","), pi;
         for(pi=0;pi<parts.length;pi++){ parts[pi]=String(parts[pi]).replace(/^\s+|\s+$/g,""); }
         if(parts.length>=3){
           var la=parseFloat(parts[0]), lo=parseFloat(parts[1]);
           if(!isNaN(la) && !isNaN(lo) && Math.abs(la)<=90 && Math.abs(lo)<=180){
+            _log("[GeoWin] OK lat="+la+" lng="+lo+" acc="+(parseFloat(parts[2])||0)+" prov="+(parts[5]||"geolocator"));
             cb(true,la,lo,{
               acc:parseFloat(parts[2])||0,
               city:parts[3]?ascUnescape(parts[3]):"",
@@ -3802,6 +3944,17 @@ function tryAutoGeo(silent){
     var box=document.getElementById("geoRow");
     _log("[Geo] ok="+ok+" city="+(cityName||"")+" src="+(info&&info.src)+" lat="+(info&&info.lat)+" lng="+(info&&info.lng)+" cfg.city="+cfg.city);
     if(ok){
+      /* IP 兜底在运营商 NAT 下可能偏出几百公里（如深圳家庭宽带出口落在广州越秀），
+         静默启动时若已有缓存城市，而 IP 结果要跨市推翻缓存 → 不信任，保留缓存。
+         WiFi 定位（src="win"）精度足够，仍允许纠正；手动「重新定位」也不拦截。 */
+      if(silent && cfg.city && cityName && info && info.src!=="win" && cityName!==cfg.city){
+        var sameCity = cityName.indexOf(cfg.city)===0 || cfg.city.indexOf(cityName)===0
+                    || cityName.substring(0,2)===cfg.city.substring(0,2);
+        if(!sameCity){
+          _log("[Geo] distrust "+info.src+" result "+cityName+", keep cached "+cfg.city);
+          return;
+        }
+      }
       /* 只在启动时的静默自动定位中防止降级：避免 IP 定位把"深圳龙岗"降级为"深圳"。
          手动点「重新定位」时用户明确要更新位置，不阻止降级/换区。 */
       if(silent && cfg.city && cityName && cityName.length<cfg.city.length && cfg.city.indexOf(cityName)===0){

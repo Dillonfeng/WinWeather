@@ -3,6 +3,7 @@ holidays.txt
 school.txt
 images/poster_urls.txt
 hl_geoloc.ps1
+hl_geo.txt
 
 # ---- 用户数据：私人内容，绝不入库 ----
 myfest.txt
@@ -15,11 +16,14 @@ images/*.png
 images/*.gif
 images/*.bmp
 images/*.webp
+# 例外：月相图标是程序资源（AI 生成的月球照片），必须入库，否则其它机器只能退回矢量画法
+!images/moon.jpg
 
 # ---- 临时文件与系统文件 ----
 *.tmp
 *.log
 *.bak
+tmp_*.hta
 Thumbs.db
 desktop.ini
 .DS_Store

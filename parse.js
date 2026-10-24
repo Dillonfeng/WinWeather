@@ -1,0 +1,11 @@
+﻿const fs = require('fs');
+const txt = fs.readFileSync('d:/WinCalender/citylist.js', 'utf8');
+console.log('前 800 字符:');
+console.log(txt.substring(0,800));
+console.log('\n---\n搜索深圳:');
+const szRegex = new RegExp('"([^"]*深圳[^"]*)"\\s*:\\s*\\{', 'g');
+let m;
+while((m = szRegex.exec(txt)) !== null) console.log(m[1]);
+console.log('\n搜索北京:');
+const bjRegex = new RegExp('"([^"]*北京[^"]*)"\\s*:\\s*\\{', 'g');
+while((m = bjRegex.exec(txt)) !== null) console.log(m[1]);
