@@ -16,6 +16,21 @@ mshta.exe "老黄历.hta"
 > 有 key 时，天气/空气质量/紫外线/气象预警/台风全部走和风单一源；
 > 无 key 时自动降级为 weather.com.cn + wttr.in + typhoon.nmc.cn。
 > `huangli_cfg.json` 已在 `.gitignore` 中，不会提交到公开仓库。
+>
+> **新平台（2027-01 起）**：和风官方将于 2027-01-01 起限制旧 API Key 的每日请求量。
+> 经实测（2026-10），**旧 key + 旧 API Host 已可直接访问新平台端点**
+> （`/weather/v1/current`、`/weather/v1/daily` 均返回 200），所以**当前无需更换 key、
+> 也无需 JWT**——程序只要检测到 `qweatherKey` 就自动走 V1 端点
+> （温度保留一位小数、湿度为百分比），其余接口路径不变。
+>
+> 如需彻底规避 2027 年的限流，可在[新控制台](https://console.qweather.com)
+> 「项目管理 → 创建凭据 → API KEY」获取新平台 API Key 与专属 API Host，
+> 写入 `huangli_cfg.json` 的 `qwv1Key` / `qwv1Host` 字段作为优先凭据（可选）：
+> ```json
+> { "qweatherKey": "旧 key", "qwv1Key": "新平台 key（可选）", "qwv1Host": "新平台 Host（可选）" }
+> ```
+> 填了 `qwv1Key` 时优先用新 key/host；不填则沿用旧 `qweatherKey`（2026 年内均可正常调用）。
+> 鉴权用 API Key 即可，JWT 仅为官方"推荐"、非强制，且 HTA 环境无法签发 Ed25519，故不使用。
 
 ## 功能
 
@@ -46,8 +61,8 @@ mshta.exe "老黄历.hta"
 
 | 数据 | 主要来源 | 降级兜底 |
 |---|---|---|
-| 实况天气（温/湿/风/气压/能见度/体感） | 和风 `/v7/weather/now` | weather.com.cn + wttr.in |
-| 7 天预报 | 和风 `/v7/weather/7d` | weather.com.cn |
+| 实况天气（温/湿/风/气压/能见度/体感） | 和风 `/weather/v1/current`（新平台）/ `/v7/weather/now` | weather.com.cn + wttr.in |
+| 7 天预报 | 和风 `/weather/v1/daily`（新平台）/ `/v7/weather/7d` | weather.com.cn |
 | 实时 AQI / PM2.5 / PM10 | 和风 `/airquality/v1/current` | sojson |
 | 5 天 AQI 预报 | 和风 `/airquality/v1/daily` | sojson 15 天 AQI 截取 |
 | 紫外线 | 和风 `/v7/indices/1d?type=5` | wttr.in |

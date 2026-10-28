@@ -1780,6 +1780,12 @@ function parseCfgText(s){
   m=/"manualCity"\s*:\s*([01])/.exec(s);   if(m) c.manualCity=parseInt(m[1],10);
   /* 和风 API Key（32 位十六进制字符串，正则允许任意非引号字符） */
   m=/"qweatherKey"\s*:\s*"([^"]*)"/.exec(s); if(m) c.qweatherKey=m[1];
+  /* 和风新平台（v1）API Key：JWT 需 Ed25519 私钥（HTA 无法本地签名），
+     故新平台凭据采用 API Key 方式（Authorization: Bearer / ?key=），
+     2027-01-01 起旧 key 限流，届时以本字段为准 */
+  m=/"qwv1Key"\s*:\s*"([^"]*)"/.exec(s); if(m) c.qwv1Key=m[1];
+  /* 新平台专属 API Host（与 key 配套，控制台-设置查看） */
+  m=/"qwv1Host"\s*:\s*"([^"]*)"/.exec(s); if(m) c.qwv1Host=m[1];
   if(isNaN(c.lat)||isNaN(c.lng)) return null;
   return c;
 }
@@ -1817,6 +1823,8 @@ function loadCfg(){
        注意此分支会整体替换 c，只保留 {city,code,lat,lng}，
        因此其余字段必须在替换前取出、替换后回填。 */
     var _qwKey=c.qweatherKey; /* [FIX] 替换 c 之前先存下和风 key */
+    var _qwKeyV1=c.qwv1Key;   /* 新平台 key 同理：c 被整体替换后会丢失 */
+    var _qwHostV1=c.qwv1Host; /* 新平台 host 同理 */
     if(c.code){
       var byCode=codeToCity(c.code);
       /* 老版本可能存过区级城市（已从 cityMap 移除），
@@ -1852,7 +1860,11 @@ function loadCfg(){
     /* [FIX] _qwKey 是替换 c 之前存的；c.qweatherKey 在被替换后已丢失 */
     if(typeof _qwKey==="string" && _qwKey){ cfg.qweatherKey=_qwKey; QWEATHER_KEY=_qwKey; }
     else if(typeof c.qweatherKey==="string"){ cfg.qweatherKey=c.qweatherKey; QWEATHER_KEY=c.qweatherKey; }
-    _log("[loadCfg] AFTER fill: cfg.qweatherKey="+JSON.stringify(cfg.qweatherKey)+" QWEATHER_KEY.length="+QWEATHER_KEY.length);
+    if(typeof _qwKeyV1==="string" && _qwKeyV1){ cfg.qwv1Key=_qwKeyV1; QWEATHER_KEY_V1=_qwKeyV1; }
+    else if(typeof c.qwv1Key==="string"){ cfg.qwv1Key=c.qwv1Key; QWEATHER_KEY_V1=c.qwv1Key; }
+    if(typeof _qwHostV1==="string" && _qwHostV1){ cfg.qwv1Host=_qwHostV1; QWEATHER_HOST_V1=_qwHostV1; }
+    else if(typeof c.qwv1Host==="string"){ cfg.qwv1Host=c.qwv1Host; QWEATHER_HOST_V1=c.qwv1Host; }
+    _log("[loadCfg] AFTER fill: cfg.qweatherKey="+JSON.stringify(cfg.qweatherKey)+" QWEATHER_KEY.length="+QWEATHER_KEY.length+" QWEATHER_KEY_V1.length="+(QWEATHER_KEY_V1?QWEATHER_KEY_V1.length:0)+" QWEATHER_HOST_V1="+(QWEATHER_HOST_V1?QWEATHER_HOST_V1:"(empty)"));
   }catch(e){ _log("[loadCfg] EXCEPTION: "+e.message); }
 }
 function saveCfg(){
@@ -1865,6 +1877,8 @@ function saveCfg(){
     var win=(cfg.winW>0 && cfg.winH>0)?(',"winW":'+cfg.winW+',"winH":'+cfg.winH+',"winX":'+cfg.winX+',"winY":'+cfg.winY):"";
     win+=',"geoDone":'+(cfg.geoDone===1?1:0)+',"manualCity":'+(cfg.manualCity===1?1:0);
     if(cfg.qweatherKey) win+=',"qweatherKey":"'+cfg.qweatherKey+'"';
+    if(cfg.qwv1Key) win+=',"qwv1Key":"'+cfg.qwv1Key+'"';
+    if(cfg.qwv1Host) win+=',"qwv1Host":"'+cfg.qwv1Host+'"';
     f.Write('{"city":"'+ascEscape(cfg.city)+'","code":"'+cfg.code+'","lat":'+cfg.lat+',"lng":'+cfg.lng+',"weekStart":'+(cfg.weekStart===0?0:1)+',"showSchool":'+(cfg.showSchool===1?1:0)+win+'}\r\n');
     f.Close();
   }catch(e){}
@@ -2359,7 +2373,8 @@ function renderForecast5(idx){
       }
       var aAqi=aqiInfo(fAqi);
       var aqHtml=(aAqi)?"<span class='aqism' style='color:"+aAqi.c+";' title='当日预报AQI "+fAqi+" "+aAqi.n+"（非实时）'>"+fAqi+"</span>":"";
-      html+="<div class='cell'><div class='d'>"+lbl+aqHtml+"</div><div class='ic'>"+ic+"</div><div class='t'>"+f.low+"~"+f.high+"°</div></div>";
+      /* 五日预报温度取整：预报天数多、误差±数度，小数无意义且易被格子宽度截断（如末位小数显示不全） */
+      html+="<div class='cell'><div class='d'>"+lbl+aqHtml+"</div><div class='ic'>"+ic+"</div><div class='t'>"+Math.round(f.low)+"~"+Math.round(f.high)+"°</div></div>";
     }
     el.innerHTML=html;
     return;
@@ -2380,7 +2395,8 @@ function renderForecast5(idx){
     html+="<div class='cell'>"
         +"<div class='d'>"+lbl+aqHtml+"</div>"
         +"<div class='ic'>"+weatherIcon(f.type)+"</div>"
-        +"<div class='t'>"+f.low+"~"+f.high+"°</div>"
+        /* 五日预报温度取整（同上，避免小数被格子宽度截断） */
+        +"<div class='t'>"+Math.round(f.low)+"~"+Math.round(f.high)+"°</div>"
         +"</div>";
   }
   el.innerHTML=html;
@@ -2741,10 +2757,15 @@ function fetchOfficialLive(){
    免费版 1000 次/天，数据来自中央气象台，与 weather.com.cn 同源。
    ============================================================ */
 function fetchQWeather(){
+  /* 有效凭据：新平台 key 优先（2027-01 后旧 key 限流），无新 key 时退回旧 key。
+     2026-10 实测：旧 key + 旧 host 可直接访问 V1 端点（/weather/v1/current 等），
+     故无需单独的新 key，任何 key 存在即走 V1 路径。 */
+  var qwKey=QWEATHER_KEY_V1||QWEATHER_KEY;
+  var useV1=!!qwKey; /* 有 key 即走 V1 天气/预报端点（旧 key 同样可用），其余接口路径不变 */
   /* [DEBUG] 和风入口日志：定位到底有没有调到和风 */
-  _log("[QWeather] fetchQWeather called, key="+QWEATHER_KEY.length+" chars, lat="+cfg.lat+", lng="+cfg.lng);
+  _log("[QWeather] fetchQWeather called, v1="+useV1+", key="+(qwKey?qwKey.length:0)+" chars, lat="+cfg.lat+", lng="+cfg.lng);
   _log("[QWeather] env: typeof JSON="+(typeof JSON)+", JSON.parse="+(typeof JSON!=="undefined"?typeof JSON.parse:"n/a"));
-  if(!cfg.lat || !cfg.lng || !QWEATHER_KEY){ _log("[QWeather] SKIP — key/坐标缺失"); return; }
+  if(!cfg.lat || !cfg.lng || !qwKey){ _log("[QWeather] SKIP — key/坐标缺失"); return; }
   var loc=cfg.lng+","+cfg.lat;
   /* JSON 解析兼容层：HTA 默认 IE7 文档模式时没有 window.JSON，
      此时回退到 eval（数据来自可信天气接口，仅做字面量求值） */
@@ -2773,7 +2794,7 @@ function fetchQWeather(){
     if(!result.now || !result.fc){
       /* 和风失败 → 触发 backup 链路（weather.com.cn + wttr.in + typhoon.nmc.cn） */
       _log("[QWeather] FAIL now/fc null, triggering backup");
-      if(QWEATHER_KEY && (!result.now || !result.fc)){
+      if(qwKey && (!result.now || !result.fc)){
         weatherFailed=true;
         fetchOfficialWx();
         fetchOfficialLive();
@@ -2932,7 +2953,7 @@ function fetchQWeather(){
         (function(idx){
           var st=stormTyphoons[idx];
           if(!st||!st.id) return;
-          var trackUrl="https://"+QWEATHER_HOST+"/v7/tropical/storm-track?stormid="+st.id+"&key="+QWEATHER_KEY+_cb;
+          var trackUrl="https://"+qwActiveHost()+"/v7/tropical/storm-track?stormid="+st.id+"&key="+qwKey+_cb;
           var sx=newXhr(); if(!sx) return;
           try{ sx.open("GET",trackUrl,true);
             sx.onreadystatechange=function(){
@@ -2966,6 +2987,133 @@ function fetchQWeather(){
     _log("[Render] lastWeather.aqi="+(lastWeather?lastWeather.aqi:"null")+" quality="+(lastWeather?lastWeather.quality:"")+" pm25="+(lastWeather?lastWeather.pm25:"")+" pm10="+(lastWeather?lastWeather.pm10:""));
     if(!inMonthView){ renderWeatherLine(cur.getFullYear(),cur.getMonth()+1,cur.getDate()); renderAlerts(); }
   }
+  /* ============ V1 新平台（2027-01 起旧 key 限流）============
+     天气/预报走新端点，返回格式与 V7 差异大：
+       温度 → {value,unit} 对象（小数，如 31.71）
+       湿度 → 0~1 小数（如 0.69）
+       7d  → days[]，daytime/nighttime 各自 condition/wind
+     这里在 fetch 层把 V1 响应转成 V7 兼容格式，下游 checkDone 的解析
+     逻辑（now.temp / now.humidity / f.fxDate / f.tempMax …）无需改动。 */
+  function _compassZh(c){
+    var M={n:"北",nne:"北东北",ne:"东北",ene:"东东北",e:"东",ese:"东东南",se:"东南",sse:"南东南",s:"南",ssw:"南西南",sw:"西南",wsw:"西西南",w:"西",wnw:"西西北",nw:"西北",nnw:"北西北"};
+    return (M[c]||"")+"风";
+  }
+  function _v1Num(o){ return (o&&o.value!=null)?String(o.value):""; }
+  /* 温度专用：保留一位小数（V1 给两位，天气显示一位足够） */
+  function _v1Temp(o){
+    if(!o||o.value==null) return "";
+    return String(Math.round(o.value*10)/10);
+  }
+  function _v1UtcDate(utc){
+    if(!utc) return "";
+    try{
+      var d=new Date(utc);
+      if(isNaN(d.getTime())) return "";
+      var y=d.getFullYear(), m=("0"+(d.getMonth()+1)).slice(-2), dd=("0"+d.getDate()).slice(-2);
+      return y+"-"+m+"-"+dd;
+    }catch(e){ return utc.slice(0,10); }
+  }
+  /* V1 observedTime 为 UTC（…Z），tooltip 直接当字符串显示会差一个时区，
+     这里转成本地时间 YYYY-MM-DD HH:MM */
+  function _v1ObsLocal(utc){
+    if(!utc) return "";
+    try{
+      var d=new Date(utc);
+      if(isNaN(d.getTime())) return utc;
+      var y=d.getFullYear(), m=("0"+(d.getMonth()+1)).slice(-2), dd=("0"+d.getDate()).slice(-2);
+      var hh=("0"+d.getHours()).slice(-2), mm=("0"+d.getMinutes()).slice(-2);
+      return y+"-"+m+"-"+dd+" "+hh+":"+mm;
+    }catch(e){ return utc; }
+  }
+  /* V1 current → V7 now 兼容对象
+     实测（2026-10）：V1 /weather/v1/current 返回字段在顶层（无 current 包装），
+     且无 observedTime 字段。obsTime 用本地当前时间（"current"=实时观测）。 */
+  function _normV1Current(c){
+    var wind=c.wind||{}, dir=wind.direction||{};
+    var obs="";
+    if(c.observedTime){ obs=_v1ObsLocal(c.observedTime); }
+    else{
+      var d=new Date();
+      obs=d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2)
+         +" "+("0"+d.getHours()).slice(-2)+":"+("0"+d.getMinutes()).slice(-2);
+    }
+    return {
+      temp: _v1Temp(c.temperature),
+      feelsLike: _v1Temp(c.feelsLike),
+      humidity: (c.humidity!=null)?String(Math.round(c.humidity*100)):"",
+      text: (c.condition&&c.condition.text)?c.condition.text:"",
+      windDir: _compassZh(dir.compass),
+      windScale: (wind.scale!=null)?String(wind.scale):"",
+      /* V7 风速单位 km/h，V1 为 m/s，换算 */
+      windSpeed: (wind.speed&&wind.speed.value!=null)?String(Math.round(wind.speed.value*3.6)):"",
+      pressure: _v1Num(c.pressure),
+      vis: _v1Num(c.visibility),
+      obsTime: obs
+    };
+  }
+  /* V1 daily → V7 daily 兼容数组 */
+  function _normV1Daily(days){
+    var out=[];
+    for(var i=0;i<days.length;i++){
+      var d=days[i], day=d.daytime||{}, night=d.nighttime||{};
+      var wdir=(day.wind&&day.wind.direction)?day.wind.direction:{};
+      out.push({
+        fxDate: _v1UtcDate(d.forecastStartTime),
+        textDay: (day.condition&&day.condition.text)?day.condition.text:"",
+        textNight: (night.condition&&night.condition.text)?night.condition.text:"",
+        tempMax: _v1Temp(d.temperatureMax),
+        tempMin: _v1Temp(d.temperatureMin),
+        windDirDay: _compassZh(wdir.compass),
+        windScaleDay: (day.wind&&day.wind.scale!=null)?String(day.wind.scale):"",
+        windSpeedDay: (day.wind&&day.wind.speed&&day.wind.speed.value!=null)?String(Math.round(day.wind.speed.value*3.6)):""
+      });
+    }
+    return out;
+  }
+  function qwV1Current(cb){
+    var xhr=newXhr();
+    if(!xhr){ completed++; checkDone(); return; }
+    try{
+      try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
+      xhr.open("GET","https://"+qwActiveHost()+"/weather/v1/current/"+cfg.lat+"/"+cfg.lng+"?key="+qwKey+_cb,true);
+      xhr.onreadystatechange=function(){
+        if(xhr.readyState==4){
+          _log("[QWeather] /weather/v1/current HTTP="+xhr.status+" len="+String(xhr.responseText||"").length+" resp="+String(xhr.responseText||"").substring(0,200));
+          if(xhr.status==200){
+            try{
+              var d=_jp(xhr.responseText);
+              _log("[QWeather] /weather/v1/current → temp="+(d&&d.temperature?d.temperature.value:"n/a"));
+              if(d&&d.temperature){ cb(_normV1Current(d)); }
+            }catch(e){ _log("[QWeather] /weather/v1/current JSON parse error: "+e.message); }
+          }
+          completed++; checkDone();
+        }
+      };
+      xhr.send(null);
+    }catch(e){ completed++; checkDone(); }
+  }
+  function qwV1Daily(cb){
+    var xhr=newXhr();
+    if(!xhr){ completed++; checkDone(); return; }
+    try{
+      try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
+      xhr.open("GET","https://"+qwActiveHost()+"/weather/v1/daily/"+cfg.lat+"/"+cfg.lng+"?days=7&key="+qwKey+_cb,true);
+      xhr.onreadystatechange=function(){
+        if(xhr.readyState==4){
+          _log("[QWeather] /weather/v1/daily HTTP="+xhr.status+" len="+String(xhr.responseText||"").length+" resp="+String(xhr.responseText||"").substring(0,200));
+          if(xhr.status==200){
+            try{
+              var d=_jp(xhr.responseText);
+              _log("[QWeather] /weather/v1/daily → days="+(d&&d.days?d.days.length:0));
+              if(d&&d.days){ cb(_normV1Daily(d.days)); }
+            }catch(e){ _log("[QWeather] /weather/v1/daily JSON parse error: "+e.message); }
+          }
+          completed++; checkDone();
+        }
+      };
+      xhr.send(null);
+    }catch(e){ completed++; checkDone(); }
+  }
   function qwGet(path, cb){
     var xhr=newXhr();
     if(!xhr){ completed++; checkDone(); return; }
@@ -2974,7 +3122,7 @@ function fetchQWeather(){
       /* path 可能已带查询串（如 indices/1d?type=5），不能直接再拼 "?"，
          否则会变成 ...?type=5?location=... 导致 location 丢失（HTTP 400） */
       var sep=(path.indexOf("?")>=0)?"&":"?";
-      xhr.open("GET","https://"+QWEATHER_HOST+"/v7/"+path+sep+"location="+loc+"&key="+QWEATHER_KEY+_cb,true);
+      xhr.open("GET","https://"+qwActiveHost()+"/v7/"+path+sep+"location="+loc+"&key="+qwKey+_cb,true);
       xhr.onreadystatechange=function(){
         if(xhr.readyState==4){
           try{ _log("[QWeather] /v7/"+path+" HD="+String(xhr.getAllResponseHeaders||"")+""); }catch(e){}
@@ -2998,7 +3146,7 @@ function fetchQWeather(){
     if(!xhr){ completed++; checkDone(); return; }
     try{
       try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
-      xhr.open("GET","https://"+QWEATHER_HOST+"/airquality/v1/current/"+cfg.lat+"/"+cfg.lng+"?key="+QWEATHER_KEY+_cb,true);
+      xhr.open("GET","https://"+qwActiveHost()+"/airquality/v1/current/"+cfg.lat+"/"+cfg.lng+"?key="+qwKey+_cb,true);
       xhr.onreadystatechange=function(){
         if(xhr.readyState==4){
           _log("[QWeather] /airquality/v1/current HTTP="+xhr.status+" resp="+String(xhr.responseText||"").substring(0,200));
@@ -3030,7 +3178,7 @@ function fetchQWeather(){
     if(!xhr){ completed++; checkDone(); return; }
     try{
       try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
-      xhr.open("GET","https://"+QWEATHER_HOST+"/airquality/v1/daily/"+cfg.lat+"/"+cfg.lng+"?key="+QWEATHER_KEY+_cb,true);
+      xhr.open("GET","https://"+qwActiveHost()+"/airquality/v1/daily/"+cfg.lat+"/"+cfg.lng+"?key="+qwKey+_cb,true);
       xhr.onreadystatechange=function(){
         if(xhr.readyState==4){
           _log("[QWeather] /airquality/v1/daily HTTP="+xhr.status+" resp="+String(xhr.responseText||"").substring(0,200));
@@ -3054,7 +3202,7 @@ function fetchQWeather(){
     if(!xhr){ completed++; checkDone(); return; }
     try{
       try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
-      xhr.open("GET","https://"+QWEATHER_HOST+"/weatheralert/v1/current/"+cfg.lat+"/"+cfg.lng+"?key="+QWEATHER_KEY+_cb,true);
+      xhr.open("GET","https://"+qwActiveHost()+"/weatheralert/v1/current/"+cfg.lat+"/"+cfg.lng+"?key="+qwKey+_cb,true);
       xhr.onreadystatechange=function(){
         if(xhr.readyState==4){
           _log("[QWeather] /weatheralert HTTP="+xhr.status+" resp="+String(xhr.responseText||"").substring(0,200));
@@ -3080,7 +3228,7 @@ function fetchQWeather(){
     try{
       try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
       var yyyy=new Date().getFullYear();
-      xhr.open("GET","https://"+QWEATHER_HOST+"/v7/tropical/storm-list?basin=NP&year="+yyyy+"&key="+QWEATHER_KEY+_cb,true);
+      xhr.open("GET","https://"+qwActiveHost()+"/v7/tropical/storm-list?basin=NP&year="+yyyy+"&key="+qwKey+_cb,true);
       xhr.onreadystatechange=function(){
         if(xhr.readyState==4){
           if(xhr.status==200){
@@ -3096,8 +3244,15 @@ function fetchQWeather(){
       xhr.send(null);
     }catch(e){ completed++; checkDone(); cb(null); }
   }
-  qwGet("weather/now",  function(d){ result.now=d.now; });
-  qwGet("weather/7d",   function(d){ result.fc=d.daily; });
+  if(useV1){
+    /* 新平台：天气/预报走 /weather/v1/current、/weather/v1/daily（小数温度、0~1 湿度），
+       其余接口路径不变只换 key */
+    qwV1Current(function(n){ result.now=n; });
+    qwV1Daily(  function(f){ result.fc=f; });
+  }else{
+    qwGet("weather/now",  function(d){ result.now=d.now; });
+    qwGet("weather/7d",   function(d){ result.fc=d.daily; });
+  }
   qwAir(                function(a){ result.air=a; });
   qwAirDaily(           function(a){ result.airDaily=a; });
   qwGet("indices/1d?type=5", function(d){ result.uv=d.daily; });
@@ -3113,7 +3268,7 @@ function fetchWeather(force){
      tropical-cyclone storm-track 按需补充实况。
      weather.com.cn / wttr.in / typhoon.nmc.cn 全部降级为 backup；
      sojson 仅用于补 forecast AQI 天数缺口。 */
-  var hasQw=!!QWEATHER_KEY;
+  var hasQw=!!qwActiveKey();
   fetchQWeather();
   if(!hasQw){
     /* 和风无 key → 启用 weather.com.cn + wttr.in 全链路 */
@@ -3477,6 +3632,17 @@ var GEO_URL_IPIP="http://myip.ipip.net/json";
    留空时 fetchQWeather 会静默跳过和风接口，不影响 weather.com.cn/sojson/wttr 兜底。 */
 var QWEATHER_KEY="";
 var QWEATHER_HOST="p85khy6vmp.re.qweatherapi.com"; /* 和风控制台分配的专属 API Host（免费版同样有） */
+/* 和风新平台（v1 接口，/weather/v1/current 等）API Key：
+   官方公告 2027-01-01 起限制旧 API Key 的每日请求量，届时需切换新平台凭据。
+   新平台 JWT 需 Ed25519 私钥本地签名（HTA 环境无法实现），故采用新平台
+   同样支持的 API Key 方式（?key= 或 Authorization 头），凭据在新控制台
+   「项目管理 → 创建凭据 → API KEY」获取，写入 huangli_cfg.json 的 qwv1Key。 */
+var QWEATHER_KEY_V1="";
+var QWEATHER_HOST_V1=""; /* 新平台专属 API Host（控制台-设置查看）；留空时 V1 沿用旧 host */
+/* 有效凭据：新平台 key 优先（2027-01 后旧 key 会被限流），无新 key 时退回旧 key */
+function qwActiveKey(){ return QWEATHER_KEY_V1 || QWEATHER_KEY; }
+/* 有效 Host：新平台 key 且配了新 host 时用新 host，否则沿用旧 host */
+function qwActiveHost(){ return (QWEATHER_KEY_V1 && QWEATHER_HOST_V1) ? QWEATHER_HOST_V1 : QWEATHER_HOST; }
 /* Windows 定位辅助脚本（hl_geoloc.ps1，由本程序在定位时生成到同目录再运行）。
    把经纬度与精度写进指定输出文件，纯 ASCII，避免系统代码页的中文乱码；
    内容全部来自程序自身，不含任何外部输入，无注入风险。 */
@@ -3782,7 +3948,9 @@ function geoIpip(cb){
    如 113.947,22.5416 → adm2=深圳、name=南山。IP 库只给到市级时靠它补到县区。 */
 function geoQwLookup(lat,lng,cb){
   cb=cb||function(){};
-  if(!QWEATHER_KEY||!QWEATHER_HOST){ cb(false,null); return; }
+  var _gk=qwActiveKey();
+  var _gh=qwActiveHost();
+  if(!_gk||!_gh){ cb(false,null); return; }
   var xhr=geoNewXhr();
   if(!xhr){ cb(false,null); return; }
   var done=false;
@@ -3791,7 +3959,7 @@ function geoQwLookup(lat,lng,cb){
   setTimeout(function(){ if(!done){ _log("[GeoQw] 超时"); fin(null); } },4000);
   try{
     try{ xhr.setTimeouts(8000,8000,8000,8000); }catch(e5){}
-    xhr.open("GET","https://"+QWEATHER_HOST+"/geo/v2/city/lookup?location="+lng+","+lat+"&key="+QWEATHER_KEY,true);
+    xhr.open("GET","https://"+_gh+"/geo/v2/city/lookup?location="+lng+","+lat+"&key="+_gk,true);
     xhr.onreadystatechange=function(){
       if(xhr.readyState!=4) return;
       if(xhr.status!=200){ _log("[GeoQw] HTTP="+xhr.status); fin(null); return; }
@@ -3982,7 +4150,7 @@ function tryAutoGeo(silent){
       }
       whenIdle(function(){
         fetchWeather(true);
-        if(!QWEATHER_KEY) fetchLive();
+        if(!qwActiveKey()) fetchLive();
         if(box) updateGeoRow();
         redrawCurrent();
       });
@@ -4109,7 +4277,7 @@ function tick(){
     }
     lastTodayKey=key;
     fetchWeather(true);
-    if(!QWEATHER_KEY) fetchLive();
+    if(!qwActiveKey()) fetchLive();
   }else if(!inMonthView && isToday(cur.getFullYear(),cur.getMonth()+1,cur.getDate()) && key!=renderedYMD){
     renderDay();
   }
@@ -4124,7 +4292,7 @@ function tick(){
   if(nowMs-lastLiveTs>=10*60*1000){
     lastLiveTs=nowMs;
     /* 和风有 key 时 fetchQWeather 已覆盖实况+预警，不再调 backup 源 */
-    if(!QWEATHER_KEY){
+    if(!qwActiveKey()){
       fetchLive();
       fetchTyphoon();
       fetchOfficialLive();
@@ -4868,7 +5036,7 @@ try{ window.onresize=onWinResize; }catch(e){}
       /* 重置全部天气缓存，否则新城市名会配旧城市的天气/实况/AQI，
          出现"北京 多云"却显示广州温度的串城市错误 */
       lastWeather=null; weatherFailed=false; live=null; lastOfficialType="";
-      fetchWeather(true); if(!QWEATHER_KEY) fetchLive();
+      fetchWeather(true); if(!qwActiveKey()) fetchLive();
     }
     settingsCity="";
     /* 每周起始日与城市无关，单独设置并始终落盘 */
@@ -4943,14 +5111,14 @@ try{ window.onresize=onWinResize; }catch(e){}
   };
   showView(false);
   lastTodayKey=todayKeyOf(new Date());
-  defer(function(){ fetchWeather(true); if(!QWEATHER_KEY) fetchLive(); }, 400);
+  defer(function(){ fetchWeather(true); if(!qwActiveKey()) fetchLive(); }, 400);
   /* 每次启动静默自动定位（IP 城市名变短时保留原区级城市）；
      用户在设置里手动选过城市（manualCity=1）则尊重其选择，不自动定位覆盖 */
   if(!cfg.manualCity) defer(function(){ tryAutoGeo(true); }, 700);
   /* 防"显示桌面"隐藏：窗口若被系统最小化/隐藏，自动还原（用户无法手动最小化，不抢操作） */
   defer(function(){ try{ bindAutoRestore(); }catch(e){} }, 1500);
   /* 和风有 key 时 typhoon.nmc.cn / wttr.in 都降级为 backup */
-  defer(function(){ if(!QWEATHER_KEY){ fetchTyphoon(); fetchLive(); } }, 900);
+  defer(function(){ if(!qwActiveKey()){ fetchTyphoon(); fetchLive(); } }, 900);
   /* 调休安排：启动后延迟同步（避开 onload 阶段的请求限制），之后每天复查一次 */
   defer(function(){ syncHolidays(false, function(st,updated){ if(updated) redrawCurrent(); }); }, 1200);
   tickTimer=setInterval(tick,30000);
