@@ -2305,6 +2305,13 @@ function renderWeatherLine(y,m,d){
     /* 台风预警单独走 #tyLine，天气实况永远保留在本行，
        不再用台风信息覆盖掉"小雪 / 29° / 体感"等天气内容 */
     var wtxt=weatherIcon(iconT)+cfg.city+" "+type+"　"+main;
+    /* 天气实况行单行不换行：温度改成一位小数后整行变宽（如"26.5° 体感25.1° 紫外线3 中"），
+       末尾 CJK 段会在空格/任意字符处折到第二行。强制单行，并把字号微调 15→14px 让整行
+       在 430px 舞台内留有余量，避免溢出截断；溢出隐藏作为极端长城市名的兜底。
+       仅作用于本行，不影响其它 .infoLine（chong/moon/air/sun 仍按原样式）。 */
+    el.style.whiteSpace="nowrap";
+    el.style.overflow="hidden";
+    el.style.fontSize="14px";
     el.innerHTML=wtxt;
     el.title=tip.join(" · ");
     if(idx>=0) renderForecast5(idx);
@@ -2999,10 +3006,12 @@ function fetchQWeather(){
     return (M[c]||"")+"风";
   }
   function _v1Num(o){ return (o&&o.value!=null)?String(o.value):""; }
-  /* 温度专用：保留一位小数（V1 给两位，天气显示一位足够） */
+  /* 温度/体感专用：保留一位小数（V1 给两位，天气显示一位足够）。
+     必须用 toFixed(1) 而非 String(Math.round(...))：后者遇到整数值会丢掉小数点
+     （如体感 25.04 → 25 → "25"，用户看到体感没有小数）。toFixed 恒输出 "25.0"。 */
   function _v1Temp(o){
     if(!o||o.value==null) return "";
-    return String(Math.round(o.value*10)/10);
+    return Number(o.value).toFixed(1);
   }
   function _v1UtcDate(utc){
     if(!utc) return "";
