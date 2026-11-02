@@ -93,3 +93,17 @@ mshta.exe "老黄历.hta"
 本程序依赖 IE9 文档模式运行（`<meta http-equiv="X-UA-Compatible" content="IE=9">`），
 但请求接口已全部升级为 HTTPS；表格行不能直接赋 `innerHTML`，需用
 `insertRow()/insertCell()` 构建。
+
+## 开发调试
+
+> 以下两条是给 AI 助手（Cline 等）/接手者的调试约定，已同时写入项目 `.clinerules`。
+
+- **终端命令回显不可靠**：某些环境下命令回显捕获不到，但命令实际已执行。调试时改用
+  「命令写文件 + 读文件」：
+  ```powershell
+  [Console]::OutputEncoding=[System.Text.Encoding]::UTF8
+  <命令> 2>&1 | Out-File .dbg.txt -Encoding utf8
+  ```
+  再读取 `.dbg.txt`。`[Console]::OutputEncoding` 防中文乱码，`.dbg.txt` 已在 `.gitignore`。
+- **`search_codebase` 不索引 `.hta`**：要在 `老黄历.hta` 内定位符号，改用按行号
+  `read_files` 分段读，或 `Select-String` grep 后写文件再读。
