@@ -3151,32 +3151,6 @@ function fetchQWeather(opts){
       xhr.send(null);
     }catch(e){ completed++; checkDone(); }
   }
-  function qwGet(path, cb){
-    var xhr=newXhr();
-    if(!xhr){ completed++; checkDone(); return; }
-    try{
-      try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
-      /* path 可能已带查询串（如 indices/1d?type=5），不能直接再拼 "?"，
-         否则会变成 ...?type=5?location=... 导致 location 丢失（HTTP 400） */
-      var sep=(path.indexOf("?")>=0)?"&":"?";
-      xhr.open("GET","https://"+qwActiveHost()+"/v7/"+path+sep+"location="+loc+"&key="+qwKey+_cb,true);
-      xhr.onreadystatechange=function(){
-        if(xhr.readyState==4){
-          try{ _log("[QWeather] /v7/"+path+" HD="+String(xhr.getAllResponseHeaders||"")+""); }catch(e){}
-          _log("[QWeather] /v7/"+path+" HTTP="+xhr.status+" len="+String(xhr.responseText||"").length+" resp="+String(xhr.responseText||"").substring(0,200));
-          if(xhr.status==200){
-            try{
-              var d=_jp(xhr.responseText);
-              _log("[QWeather] /v7/"+path+" → code="+(d?d.code:"null")+" (now="+!!(d&&d.now)+" daily="+!!(d&&d.daily)+")");
-              if(d&&d.code==="200") cb(d);
-            }catch(e){ _log("[QWeather] /v7/"+path+" JSON parse error: "+e.message); }
-          }
-          completed++; checkDone();
-        }
-      };
-      xhr.send(null);
-    }catch(e){ completed++; checkDone(); }
-  }
   /* 新版空气质量接口：/airquality/v1/current/{lat}/{lng} */
   function qwAir(cb){
     var xhr=newXhr();
@@ -3257,15 +3231,10 @@ function fetchQWeather(opts){
       xhr.send(null);
     }catch(e){ completed++; checkDone(); }
   }
-  if(useV1){
-    /* 新平台：天气/预报走 /weather/v1/current、/weather/v1/daily（小数温度、0~1 湿度），
-       其余接口路径不变只换 key */
-    qwV1Current(function(n){ if(n) result.now=n; });
-    qwV1Daily(  function(f){ if(f) result.fc=f; });
-  }else{
-    qwGet("weather/now",  function(d){ if(d&&d.now) result.now=d.now; });
-    qwGet("weather/7d",   function(d){ if(d&&d.daily) result.fc=d.daily; });
-  }
+  /* 天气/预报：有 key 即走 V1 端点 /weather/v1/current、/weather/v1/daily（小数温度、0~1 湿度）。
+     V7 已废弃（/v7/weather/now、/v7/weather/7d 2027-08-01 停用），不再保留回退分支。 */
+  qwV1Current(function(n){ if(n) result.now=n; });
+  qwV1Daily(  function(f){ if(f) result.fc=f; });
   /* 实时 AQI（/airquality/v1/current）随快速链路每 10 分钟刷新——悬停补充与
      空气质量行都用它；5 天 AQI 预报 airDaily 按天更新，仍只在全量(60 分钟)取。
      V7 官方紫外线指数（indices/1d?type=5）已移除——悬停补充改为实时 AQI，
