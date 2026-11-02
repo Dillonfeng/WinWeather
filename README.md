@@ -13,7 +13,8 @@ mshta.exe "老黄历.hta"
 首次运行会在同目录生成 `holidays.txt`、`school.txt`、`myfest.txt`、`huangli_cfg.json` 与 `images/` 目录；自动定位时临时生成 `hl_geoloc.ps1`（Windows 定位辅助脚本）与 `hl_geo.txt`（定位结果，读后即删）。
 
 > **和风天气 API Key**：程序启动时会读取同目录 `huangli_cfg.json` 中的 `qweatherKey` 字段。
-> 有 key 时，天气/空气质量/紫外线/气象预警/台风全部走和风单一源；
+> 有 key 时，天气/空气质量/紫外线/气象预警走和风（均为免费额度内的接口）；
+> 台风跟踪固定走免费的中国气象局台风网 `typhoon.nmc.cn`（和风台风接口为付费项目，已停用）。
 > 无 key 时自动降级为 weather.com.cn + wttr.in + typhoon.nmc.cn。
 > `huangli_cfg.json` 已在 `.gitignore` 中，不会提交到公开仓库。
 >
@@ -39,10 +40,10 @@ mshta.exe "老黄历.hta"
 | 黄历 | 农历、干支、生肖、宜忌、值神、冲煞、节气、传统节日 |
 | 月相 | 按农历日推算 8 相，盈亮面在右、亏亮面在左；日行首尾标注「开始/结束」 |
 | 万年历 | 整月网格，支持**周一开头 / 周日开头**切换 |
-| 天气 | 和风天气 6 接口：实况 / 7 天预报 / 实时 AQI / 5 天 AQI 预报 / 紫外线 / 气象预警 |
+| 天气 | 和风天气 5 接口：实况 / 7 天预报 / 实时 AQI / 5 天 AQI 预报 / 气象预警；紫外线走 Open-Meteo |
 | 空气质量 | 当前 AQI + 未来 5 天（今天用实时实测、未来用预报预测）；悬停看 PM2.5 / PM10 |
 | 气象预警 | 和风 weatheralert 覆盖台风 / 高温 / 暴雨 / 大风 / 雷电 / 寒潮 / 沙尘暴 / 大雾 / 霾 / 干旱 / 冰雹 等 |
-| 台风 | 和风 tropical-cyclone 全球活跃台风跟踪（位置 / 强度 / 风速 / 气压 / 移向移速 / 64 节风圈）；nmc 兜底 |
+| 台风 | 中国气象局台风网 `typhoon.nmc.cn` 活跃台风跟踪（位置 / 强度 / 风速 / 气压 / 移向移速 / 四象限风圈）；本地台风预警优先展示 |
 | 节日海报 | 自动搜图；节日/生日配图不理想时可在设置里指定图片来源 |
 | 调休同步 | 每天自动从接口同步国务院放假与调休安排 |
 | 跨天刷新 | 零点后自动翻到新的一天，无需重启 |
@@ -65,12 +66,17 @@ mshta.exe "老黄历.hta"
 | 7 天预报 | 和风 `/weather/v1/daily`（新平台）/ `/v7/weather/7d` | weather.com.cn |
 | 实时 AQI / PM2.5 / PM10 | 和风 `/airquality/v1/current` | sojson |
 | 5 天 AQI 预报 | 和风 `/airquality/v1/daily` | sojson 15 天 AQI 截取 |
-| 紫外线 | 和风 `/v7/indices/1d?type=5` | wttr.in |
+| 紫外线 | Open-Meteo（免费、免密钥，实时） | wttr.in |
 | 气象预警（高温/暴雨/大风/…） | 和风 `/weatheralert/v1/current` | — |
-| 台风跟踪（活跃台风 + 实况） | 和风 `/v7/tropical/storm-list` + `storm-track` | 中国气象局台风网 `typhoon.nmc.cn` |
+| 台风跟踪（活跃台风 + 实况） | 中国气象局台风网 `typhoon.nmc.cn`（免费、免密钥） | — |
 | 本地台风预警 | 和风 `/weatheralert/v1/current`（事件码 1001） | — |
 | 节假日 | timor.tech | — |
 | IP 定位 | ip-api.com + ipip.net | — |
+
+> **和风计费说明**（依据官方「按量计费定价」）：天气/预报/预警/天气指数/空气质量/GeoAPI/天文 属于
+> 「天气和基础服务」，每月 5 万次请求以内免费；**热带气旋（台风）与海洋数据属于「台风和海洋」，
+> 没有免费额度，从第一次请求起即计费**。因此本项目不再调用和风台风接口，台风改用免费的
+> `typhoon.nmc.cn`，其余和风接口均在免费额度内。
 
 ## 自定义节日配图
 

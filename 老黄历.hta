@@ -1777,14 +1777,14 @@ function weatherIcon(type){
 var cur=new Date();
 var viewY, viewM;
 var inMonthView=false;
-var cfg={city:"北京",code:"101010100",lat:39.9042,lng:116.4074,weekStart:1,showSchool:0,winW:0,winH:0,winX:0,winY:0,geoDone:0,manualCity:0};
+var cfg={city:"北京",code:"101010100",lat:39.9042,lng:116.4074,geoLat:0,geoLng:0,weekStart:1,showSchool:0,winW:0,winH:0,winX:0,winY:0,geoDone:0,manualCity:0};
 var lastWeather=null, lastFastTs=0, lastFullTs=0, weatherFailed=false, weatherRetry=0;
 /* 和风结果缓存：拆成"快速/全量"两条链路后，每轮只会刷新部分接口，
    其余字段从这里复用上一轮的值，避免快速刷新时把预报/空气/台风清空。 */
-var QW_CACHE={now:null,fc:null,air:null,airDaily:null,uv:null,alert:null,stormList:null};
+var QW_CACHE={now:null,fc:null,air:null,airDaily:null,uv:null,alert:null};
 /* Open-Meteo current.uv_index（约 15 分钟更新一次），比 wttr 的 3 小时步长更细 */
 var uvNow=null;
-function resetQwCache(){ QW_CACHE={now:null,fc:null,air:null,airDaily:null,uv:null,alert:null,stormList:null}; uvNow=null; }
+function resetQwCache(){ QW_CACHE={now:null,fc:null,air:null,airDaily:null,uv:null,alert:null}; uvNow=null; }
 /* 最近一次成功取得的官方(sojson)天气类型，例如"多云"。
    sojson 偶发失败时继续沿用，不回退到 wttr.in 测站的天气代码。 */
 var lastOfficialType="";
@@ -1827,6 +1827,9 @@ function parseCfgText(s){
   m=/"winY"\s*:\s*(-?\d+)/.exec(s);        if(m) c.winY=parseInt(m[1],10);
   m=/"geoDone"\s*:\s*([01])/.exec(s);      if(m) c.geoDone=parseInt(m[1],10);
   m=/"manualCity"\s*:\s*([01])/.exec(s);   if(m) c.manualCity=parseInt(m[1],10);
+  /* 真实定位坐标（WiFi/GPS/IP），仅用于"相对我的位置"的计算（台风方位距离等） */
+  m=/"geoLat"\s*:\s*(-?[0-9.]+)/.exec(s);  if(m) c.geoLat=parseFloat(m[1]);
+  m=/"geoLng"\s*:\s*(-?[0-9.]+)/.exec(s);  if(m) c.geoLng=parseFloat(m[1]);
   /* 和风 API Key（32 位十六进制字符串，正则允许任意非引号字符） */
   m=/"qweatherKey"\s*:\s*"([^"]*)"/.exec(s); if(m) c.qweatherKey=m[1];
   /* 和风新平台（v1）API Key：JWT 需 Ed25519 私钥（HTA 无法本地签名），
@@ -1874,6 +1877,8 @@ function loadCfg(){
     var _qwKey=c.qweatherKey; /* [FIX] 替换 c 之前先存下和风 key */
     var _qwKeyV1=c.qwv1Key;   /* 新平台 key 同理：c 被整体替换后会丢失 */
     var _qwHostV1=c.qwv1Host; /* 新平台 host 同理 */
+    /* 真实定位坐标同理：c 被整体替换后会丢失，先取出再回填 */
+    var _geoLat=c.geoLat, _geoLng=c.geoLng;
     if(c.code){
       var byCode=codeToCity(c.code);
       /* 老版本可能存过区级城市（已从 cityMap 移除），
@@ -1905,6 +1910,9 @@ function loadCfg(){
     cfg.winY=winY;
     cfg.geoDone=geo;
     cfg.manualCity=mc;
+    /* 真实定位坐标：0 表示没有（老配置/手动选城市），台风方位距离回退到城市坐标 */
+    cfg.geoLat=(typeof _geoLat==="number" && !isNaN(_geoLat))?_geoLat:0;
+    cfg.geoLng=(typeof _geoLng==="number" && !isNaN(_geoLng))?_geoLng:0;
     /* 和风天气 API Key：从 cfg 读，避免硬编码进源码（cfg 已 gitignore） */
     /* [FIX] _qwKey 是替换 c 之前存的；c.qweatherKey 在被替换后已丢失 */
     if(typeof _qwKey==="string" && _qwKey){ cfg.qweatherKey=_qwKey; QWEATHER_KEY=_qwKey; }
@@ -1925,6 +1933,8 @@ function saveCfg(){
     var f=fso.CreateTextFile(folder+"\\huangli_cfg.json",true);
     var win=(cfg.winW>0 && cfg.winH>0)?(',"winW":'+cfg.winW+',"winH":'+cfg.winH+',"winX":'+cfg.winX+',"winY":'+cfg.winY):"";
     win+=',"geoDone":'+(cfg.geoDone===1?1:0)+',"manualCity":'+(cfg.manualCity===1?1:0);
+    /* 真实定位坐标（仅用于相对"我的位置"计算）；没有则不写，落盘后按 0 处理 */
+    if(cfg.geoLat && cfg.geoLng) win+=',"geoLat":'+cfg.geoLat+',"geoLng":'+cfg.geoLng;
     if(cfg.qweatherKey) win+=',"qweatherKey":"'+cfg.qweatherKey+'"';
     if(cfg.qwv1Key) win+=',"qwv1Key":"'+cfg.qwv1Key+'"';
     if(cfg.qwv1Host) win+=',"qwv1Host":"'+cfg.qwv1Host+'"';
@@ -2338,12 +2348,17 @@ function renderWeatherLine(y,m,d){
     else if(wrType) tip.push("天气来自 wttr.in 测站（官方源暂不可用）："+wrType);
     if(lv){ tip.push("实况 "+lv.temp+"°"); if(lv.pres) tip.push("气压 "+lv.pres+"hPa"); if(lv.vis) tip.push("能见度 "+lv.vis+"km"); if(lv.wind) tip.push(lv.wind+"风 "+(lv.windLv||(lv.windKmh+"km/h"))); }
     if(today && lv){
-      if(lv.uvHour && lv.uvHour.idx!==null && lv.uvHour.idx>=0){
-        var uvLvl2=uvLevel(lv.uvHour.idx);
-        if(lv.uvHour.idx>0) tip.push("当前紫外线指数 "+lv.uvHour.idx+"（"+uvLvl2+"，Open-Meteo"+(lv.uvHour.at?(" "+lv.uvHour.at):"")+" 实时）"+(lv.uv&&lv.uv.level?("；今日白天官方指数："+lv.uv.level+(lv.uv.category?("（"+lv.uv.category+"）"):"")+(lv.uv.desc?("："+lv.uv.desc):"")):""));
-        else tip.push("当前为夜间，紫外线弱（实时值 0）"+(lv.uv&&lv.uv.level?("；今日白天官方指数："+lv.uv.level+(lv.uv.category?("（"+lv.uv.category+"）"):"")):""));
-      }else if(lv.uv && lv.uv.level){
-        tip.push(isDaytime()?("紫外线指数 "+lv.uv.level+(lv.uv.desc?("："+lv.uv.desc):"")):("当前为夜间，紫外线弱；今日白天官方等级："+lv.uv.level+(lv.uv.desc?("（"+lv.uv.desc+"）"):"")));
+      /* 悬停补充：和风 V1 实时空气质量（/airquality/v1/current，随全量刷新更新）。
+         原来这里显示 V7 官方紫外线指数（/v7/indices/1d?type=5，2027-08 后失效），
+         现改为实时 AQI + PM2.5/PM10；主界面紫外线仍由 Open-Meteo（fetchUvNow）实时提供。 */
+      var raq=(lv&&lv.aqi>=0)?lv.aqi:((lastWeather&&lastWeather.aqi>=0)?lastWeather.aqi:-1);
+      if(raq>=0){
+        var raqInfo=aqiInfo(raq);
+        tip.push("实时AQI "+raq+(raqInfo?(" "+raqInfo.n):"")
+          +((lastWeather&&lastWeather.quality)?("（"+lastWeather.quality+"）"):"")
+          +((lastWeather&&lastWeather.pm25!=="")?(" · PM2.5 "+lastWeather.pm25):"")
+          +((lastWeather&&lastWeather.pm10!=="")?(" · PM10 "+lastWeather.pm10):"")
+          +"（和风 V1 实时）");
       }
     }
     /* 仅当官方实况不可用（lv 确实来自 wttr.in）时，才提示与气象局口径的差异 */
@@ -2833,9 +2848,11 @@ function fetchQWeather(opts){
     try{ if(typeof JSON!=="undefined" && JSON.parse) return JSON.parse(t); }catch(e){}
     try{ return eval("("+t+")"); }catch(e){ return null; }
   }
-  /* 全量 7 个请求：now + 7d + air/current + air/daily + uv + alert + storm-list
-     快速 2 个：now + alert（各字段写入 QW_CACHE，未刷新的字段保留上一轮值） */
-  var result=QW_CACHE, completed=0, expected=full?7:2;
+  /* 全量 5 个请求：now + 7d + air/current + air/daily + alert
+     快速 4 个：now + 7d + air/current + alert（各字段写入 QW_CACHE，未刷新的字段保留上一轮值）
+     和风 tropical-cyclone（台风）属于"台风和海洋"计费组、无免费额度，已停用；
+     台风跟踪改由免费的 typhoon.nmc.cn 提供（见 fetchTyphoon）。 */
+  var result=QW_CACHE, completed=0, expected=full?5:4;
   var _cb="&_cb="+Math.floor(Math.random()*1e9);
   function newXhr(){
     /* 和风响应带 Content-Encoding: gzip。ServerXMLHTTP 走 WinHTTP 栈不会自动解压，
@@ -2848,16 +2865,16 @@ function fetchQWeather(opts){
   }
   function checkDone(){
     if(completed<expected){ _log("[QWeather] checkDone "+completed+"/"+expected+" waiting"); return; }
-    _log("[QWeather] checkDone "+completed+"/"+expected+" done, now="+!!result.now+" fc="+!!result.fc+" air="+!!result.air+" airDaily="+!!result.airDaily+" alert="+!!result.alert+" uv="+!!result.uv+" stormList="+!!result.stormList);
+    _log("[QWeather] checkDone "+completed+"/"+expected+" done, now="+!!result.now+" fc="+!!result.fc+" air="+!!result.air+" airDaily="+!!result.airDaily+" alert="+!!result.alert);
     if(!result.now || !result.fc){
-      /* 和风失败 → 触发 backup 链路（weather.com.cn + wttr.in + typhoon.nmc.cn） */
+      /* 和风失败 → 触发 backup 链路（weather.com.cn + wttr.in）；
+         台风不在这里补，固定由 tick 每 30 分钟拉取 nmc */
       _log("[QWeather] FAIL now/fc null, triggering backup");
       if(qwKey && (!result.now || !result.fc)){
         weatherFailed=true;
         fetchOfficialWx();
         fetchOfficialLive();
         fetchLive();
-        fetchTyphoon();
       }
       return;
     }
@@ -2945,12 +2962,8 @@ function fetchQWeather(opts){
       });
     }
     /* 组装 officialLive（weather1d 页兼容格式）。
-       和风 indices(type=5) 返回 level=数值指数(如"3")、category=等级名(如"中等")、text=提示。
-       之前把 level 写成 category 导致界面只显示"中等"而无数值，现已纠正。 */
-    var uvData=null;
-    if(result.uv && result.uv.length){
-      uvData={level: result.uv[0].level, category: result.uv[0].category, desc: result.uv[0].text};
-    }
+       紫外线不再取和风 V7 indices(type=5)（已下线）；officialLive.uv 恒为 null，
+       主界面紫外线统一由 Open-Meteo 实时值（fetchUvNow → uvNow）提供。 */
     officialLive={
       temp: now.temp,
       hum: now.humidity,
@@ -2963,85 +2976,18 @@ function fetchQWeather(opts){
       vis: now.vis,
       aqi: (result.air&&result.air.aqi!=null)?parseInt(result.air.aqi,10):-1,
       type: now.text,
-      uv: uvData
+      uv: null
     };
     weatherFailed=false; weatherRetry=0;
     /* 和风实时预警（高温/暴雨/大风/雷电/寒潮/沙尘暴/大雾/霾/台风…） */
     LAST_ALERTS=result.alert&&result.alert.alerts?result.alert.alerts:[];
     LAST_ALERTS_AT=nowClock();
-    /* 台风：三级来源优先级
-       1) 和风 weatheralert 本地台风预警 → src:"alert"（红色警示风 ⚠）
-       2) 和风 tropical-cyclone storm-list（活跃台风）→ src:"storm"（蓝色信息风 🌀）
-       3) typhoon.nmc.cn → src:"nmc"（蓝色信息风 🌀，和风无活跃台风时兜底） */
-    var alertTyphoons=[];
-    for(var ti=0;ti<LAST_ALERTS.length;ti++){
-      if(LAST_ALERTS[ti].eventType && (LAST_ALERTS[ti].eventType.code==="1001" || LAST_ALERTS[ti].eventType.name==="台风")){
-        var a=LAST_ALERTS[ti];
-        alertTyphoons.push({
-          id:a.id,
-          cn:a.headline?a.headline.replace(/预警信号/,"").replace(/.*?(台风|热带风暴|强热带风暴|强台风|超强台风|热带低压)/,"$1"):"台风",
-          level:a.severity||"",
-          desc:a.description||a.headline||"",
-          src:"alert"
-        });
-      }
-    }
-    var stormTyphoons=[];  /* 和风 tropical-cyclone storm-list（只在全量刷新时重建，避免快速轮次重复请求 storm-track） */
-    if(full && result.stormList && result.stormList.storm){
-      var stormArr=result.stormList.storm;
-      for(var si=0;si<stormArr.length;si++){
-        if(stormArr[si].isActive==="1"){
-          stormTyphoons.push({
-            id:stormArr[si].id,         /* 格式 "NP_2630" */
-            cn:stormArr[si].name||"台风",
-            basin:stormArr[si].basin||"NP",
-            year:stormArr[si].year||"",
-            src:"storm"
-          });
-        }
-      }
-    }
-    if(alertTyphoons.length){
-      TYPHOONS=alertTyphoons; TYPHOON_AT=LAST_ALERTS_AT;
-    }else if(full && stormTyphoons.length){
-      /* 和风 storm-list 有活跃台风：先渲染一版（仅名称），再逐个补 storm-track 实况 */
-      TYPHOONS=stormTyphoons; TYPHOON_AT=LAST_ALERTS_AT;
-      whenIdle(function(){ renderTyphoonLine(); });
-      for(var sdi=0;sdi<stormTyphoons.length;sdi++){
-        (function(idx){
-          var st=stormTyphoons[idx];
-          if(!st||!st.id) return;
-          var trackUrl="https://"+qwActiveHost()+"/v7/tropical/storm-track?stormid="+st.id+"&key="+qwKey+_cb;
-          var sx=newXhr(); if(!sx) return;
-          try{ sx.open("GET",trackUrl,true);
-            sx.onreadystatechange=function(){
-              if(sx.readyState==4 && sx.status==200){
-                try{
-                  var sd=_jp(sx.responseText);
-                  if(sd && sd.code==="200" && sd.now){
-                    var cur=TYPHOONS[idx]; if(!cur) return;
-                    cur.intensity=TYPHOON_STATUS[sd.now.type]||sd.now.type;
-                    cur.wind=parseInt(sd.now.windSpeed,10);
-                    cur.pressure=parseInt(sd.now.pressure,10);
-                    cur.lat=parseFloat(sd.now.lat);
-                    cur.lon=parseFloat(sd.now.lon);
-                    cur.moveDir=dir16Zh(sd.now.moveDir)||sd.now.moveDir;
-                    cur.moveSpeed=parseInt(sd.now.moveSpeed,10);
-                    cur.time=sd.now.pubTime||"";
-                    cur.windRadius64=sd.now.windRadius64;  /* 64节风圈半径（km） */
-                    TYPHOON_AT=nowClock();
-                    whenIdle(function(){ renderTyphoonLine(); });
-                  }
-                }catch(e){}
-              }
-            }; sx.send(null);
-          }catch(e){}
-        })(sdi);
-      }
-    }else if(full){
-      /* 和风 storm-list 也没有活跃台风 → 兜底 typhoon.nmc.cn */
-      try{ fetchTyphoon(); }catch(e){}
-    }
+    /* 台风：两级来源优先级
+       1) 和风 weatheralert 本地台风预警 → src:"alert"（红色警示 ⚠，免费接口）
+       2) typhoon.nmc.cn 活跃台风跟踪 → src:"nmc"（蓝色信息 🌀，免密钥）
+       和风 tropical-cyclone（/v7/tropical/storm-list、/v7/tropical/storm-track）
+       属于"台风和海洋"计费组、无免费额度，已停用；台风跟踪统一走 nmc。 */
+    composeTyphoons();
     _log("[Render] lastWeather.aqi="+(lastWeather?lastWeather.aqi:"null")+" quality="+(lastWeather?lastWeather.quality:"")+" pm25="+(lastWeather?lastWeather.pm25:"")+" pm10="+(lastWeather?lastWeather.pm10:""));
     if(!inMonthView){ renderWeatherLine(cur.getFullYear(),cur.getMonth()+1,cur.getDate()); renderAlerts(); }
   }
@@ -3311,30 +3257,6 @@ function fetchQWeather(opts){
       xhr.send(null);
     }catch(e){ completed++; checkDone(); }
   }
-  /* 和风热带气旋（台风）列表：/v7/tropical/storm-list?basin=NP&year=YYYY
-     需要活跃台风的 stormid（如 NP_2630）才能继续调 storm-track 取实况位置/强度/风速/气压/风圈。 */
-  function qwStormList(cb){
-    var xhr=newXhr();
-    if(!xhr){ completed++; checkDone(); return; }
-    try{
-      try{ xhr.setTimeouts(15000,15000,15000,15000); }catch(e){}
-      var yyyy=new Date().getFullYear();
-      xhr.open("GET","https://"+qwActiveHost()+"/v7/tropical/storm-list?basin=NP&year="+yyyy+"&key="+qwKey+_cb,true);
-      xhr.onreadystatechange=function(){
-        if(xhr.readyState==4){
-          if(xhr.status==200){
-            try{
-              var d=_jp(xhr.responseText);
-              _log("[QWeather] /v7/tropical/storm-list → code="+(d&&d.code)+" storm="+(d&&d.storm?d.storm.length:0));
-              cb(d);
-            }catch(e){ _log("[QWeather] /v7/tropical/storm-list JSON error"); cb(null); }
-          }else{ _log("[QWeather] /v7/tropical/storm-list HTTP "+xhr.status); cb(null); }
-          completed++; checkDone();
-        }
-      };
-      xhr.send(null);
-    }catch(e){ completed++; checkDone(); cb(null); }
-  }
   if(useV1){
     /* 新平台：天气/预报走 /weather/v1/current、/weather/v1/daily（小数温度、0~1 湿度），
        其余接口路径不变只换 key */
@@ -3344,21 +3266,25 @@ function fetchQWeather(opts){
     qwGet("weather/now",  function(d){ if(d&&d.now) result.now=d.now; });
     qwGet("weather/7d",   function(d){ if(d&&d.daily) result.fc=d.daily; });
   }
+  /* 实时 AQI（/airquality/v1/current）随快速链路每 10 分钟刷新——悬停补充与
+     空气质量行都用它；5 天 AQI 预报 airDaily 按天更新，仍只在全量(60 分钟)取。
+     V7 官方紫外线指数（indices/1d?type=5）已移除——悬停补充改为实时 AQI，
+     主界面紫外线仍由 Open-Meteo（fetchUvNow）实时提供，不再依赖 V7。 */
+  qwAir(                function(a){ if(a) result.air=a; });
   if(full){
-    qwAir(                function(a){ if(a) result.air=a; });
     qwAirDaily(           function(a){ if(a) result.airDaily=a; });
-    qwGet("indices/1d?type=5", function(d){ if(d&&d.daily) result.uv=d.daily; });
-    qwStormList(          function(s){ if(s) result.stormList=s; });
   }
   qwAlert(              function(a){ if(a) result.alert=a; });
 }
 function fetchWeather(force){
   var now=new Date().getTime();
   var hasQw=!!qwActiveKey();
-  /* 有和风 key 时拆两条链路：
-     快速(10 分钟)：实况 now + 预警 + wttr 小时紫外线（上游都是分钟/小时级）
-     全量(60 分钟)：7 天预报 + 空气质量 + 紫外线当日值 + 台风（上游按天/6 小时更新）
-     无 key 的 backup 链路维持原来的 30 分钟全量；10 分钟实况由 tick 单独轮询。 */
+  /* 有和风 key 时拆两条链路（有 key 即走 V1）：
+     快速(10 分钟)：实况 now + 7 天预报 + 实时 AQI + 预警（上游分钟/小时级）
+     全量(60 分钟)：在快速基础上再补 5 天 AQI 预报 airDaily（按天更新）
+     台风不在此链路内：和风 tropical-cyclone 为付费接口已停用，台风由
+     tick 每 30 分钟调用免费的 fetchTyphoon（typhoon.nmc.cn）。
+     无 key 的 backup 链路维持原来的 30 分钟全量。 */
   var full, fast;
   if(force){ full=true; fast=true; }
   else if(hasQw){
@@ -3371,7 +3297,7 @@ function fetchWeather(force){
   if(!full && !fast) return;
   if(fast) lastFastTs=now;
   if(full) lastFullTs=now;
-  _log("[Weather] refresh mode="+(full?"full(7)":"fast(2)")+" hasQw="+hasQw);
+  _log("[Weather] refresh mode="+(full?"full(5)":"fast(4)")+" hasQw="+hasQw);
   if(hasQw){
     fetchQWeather({full:full});
     /* 紫外线单独走 Open-Meteo 实时值（15 分钟级），不再依赖 wttr 的 3 小时步长 */
@@ -4184,13 +4110,23 @@ function geoDetect(cb){
   });
   ipChain();
 }
-/* 定位成功后应用城市并落盘 */
-function applyGeoCity(cityName){
+/* 相对"我的位置"的计算基准：优先真实定位坐标（Windows WiFi/GPS 或 IP 坐标），
+   没有时才退回城市中心坐标。台风方位/距离、未来的其他"离我多远"计算都应走这里，
+   避免按城市中心算导致距离出现几十公里的偏差。 */
+function myPos(){
+  if(cfg.geoLat && cfg.geoLng && !isNaN(cfg.geoLat) && !isNaN(cfg.geoLng)) return {lat:cfg.geoLat, lng:cfg.geoLng};
+  return {lat:cfg.lat, lng:cfg.lng};
+}
+/* 定位成功后应用城市并落盘（lat/lng 为定位到的真实坐标，可选） */
+function applyGeoCity(cityName, lat, lng){
   if(!cityMap[cityName]) return false;
   cfg.city=cityName;
   cfg.code=cityMap[cityName].code;
   cfg.lat=cityMap[cityName].lat;
   cfg.lng=cityMap[cityName].lng;
+  /* 天气查询仍用城市坐标/编码；真实定位坐标单独存，供台风方位距离使用 */
+  if(lat && lng && !isNaN(lat) && !isNaN(lng)){ cfg.geoLat=lat; cfg.geoLng=lng; }
+  else { cfg.geoLat=0; cfg.geoLng=0; }   /* 本次定位没给坐标 → 不沿用旧位置 */
   cfg.geoDone=1;
   cfg.manualCity=0;   /* 自动定位结果：允许下次启动再次自动定位 */
   lastWeather=null; live=null; lastOfficialType="";
@@ -4205,6 +4141,7 @@ function applyGeoCityTemp(cityName, lat, lng){
   cfg.code="";
   cfg.lat=lat;
   cfg.lng=lng;
+  cfg.geoLat=lat; cfg.geoLng=lng;   /* 临时城市本身就是真实定位坐标 */
   cfg.geoDone=1;
   cfg.manualCity=0;   /* 自动定位结果：允许下次启动再次自动定位 */
   lastWeather=null; live=null; lastOfficialType="";
@@ -4238,7 +4175,7 @@ function tryAutoGeo(silent){
         cityName=cfg.city;
       }
       var changed=(cityName!==cfg.city);
-      var applied=applyGeoCity(cityName);
+      var applied=applyGeoCity(cityName, info&&info.lat, info&&info.lng);
       /* cityMap 中无此城市：用真实地名+坐标临时设置（和风按坐标查天气） */
       if(!applied && info && info.lat && info.lng){
         applyGeoCityTemp(cityName, info.lat, info.lng);
@@ -4398,17 +4335,23 @@ function tick(){
      若只跟天气一起每 30 分钟刷，会长时间显示上一小时的旧观测，
      与官网页面（分钟级更新的实况）出现 0.5° 级温差 */
   var nowMs=n.getTime();
+  /* 台风每 30 分钟刷新一次：和风 tropical-cyclone 为付费接口已停用，
+     改由免费的 typhoon.nmc.cn 提供；nmc 观测点本身约 3 小时更新，无需更频繁 */
+  if(nowMs-lastTyphoonTs>=30*60*1000){
+    lastTyphoonTs=nowMs;
+    fetchTyphoon();
+  }
   if(nowMs-lastLiveTs>=10*60*1000){
     lastLiveTs=nowMs;
     /* 和风有 key 时 fetchQWeather 已覆盖实况+预警，不再调 backup 源 */
     if(!qwActiveKey()){
       fetchLive();
-      fetchTyphoon();
       fetchOfficialLive();
     }
   }
 }
 var lastLiveTs=0;
+var lastTyphoonTs=0;
 function redrawCurrent(){
   whenIdle(function(){
     try{
@@ -4664,15 +4607,19 @@ function setAutostart(on){
   try{ s.RegDelete(p); return !isAutostart(); }catch(e2){ return false; }
 }
 /* ============================================================
-   台风信息（中国气象局台风网 typhoon.nmc.cn，免密钥、支持 HTTP）
-   和风 weatheralert 已覆盖台风/高温/暴雨/大风/雷电/寒潮/沙尘暴等
-   所有预警类型，作为优先来源；nmc 仅作为远洋台风跟踪的补充。
+   台风信息（中国气象局台风网 typhoon.nmc.cn，免密钥、免费、支持 HTTP）
+   和风 tropical-cyclone 属于"台风和海洋"计费组、无免费额度，已停用；
+   nmc 是活跃台风跟踪的唯一来源，和风 weatheralert（免费）的本地台风预警优先展示。
    ============================================================ */
 var TYPHOON_URL="http://typhoon.nmc.cn/weatherservice/typhoon/jsons/list_default";
-var TYPHOONS=[];          /* 活跃台风 [{cn,en,num}] */
+var TYPHOONS=[];          /* 当前展示的台风（本地预警优先，其次 nmc 跟踪） */
 var TYPHOON_AT="";
+var TYPHOONS_NMC=[];      /* nmc 活跃台风跟踪列表（与本地预警合并前） */
+var TYPHOON_AT_NMC="";
 var TYPHOON_STATUS={TS:"热带风暴",STS:"强热带风暴",TY:"台风",STY:"强台风",SuperTY:"超强台风",TD:"热带低压"};
-/* 解析单个台风详情（view_{id}），返回最新轨迹点的强度/风速/气压/位置/移向移速 */
+/* 风圈等级代码 → 中文级数（nmc 用 30KTS/50KTS/64KTS 表示 7/10/12 级风圈） */
+var TYPHOON_RADIUS_LEVEL={ "30KTS":"7级", "50KTS":"10级", "64KTS":"12级" };
+/* 解析单个台风详情（view_{id}），返回最新轨迹点的强度/风速/气压/位置/移向移速/四象限风圈 */
 function parseTyphoonDetail(txt){
   try{
     /* 去掉 JSONP 包裹 typhoon_jsons_view_xxx({...}) */
@@ -4684,19 +4631,62 @@ function parseTyphoonDetail(txt){
     var tp=arr[8][arr[8].length-1];   /* 最新轨迹点 */
     if(!tp||tp.length<10) return null;
     var lvCode=String(tp[3]||"");
+    /* tp[10] = 风圈半径：[["30KTS",东北,东南,西南,西北,id], ["50KTS",…], ["64KTS",…]]，
+       多个等级同时存在时取最大（12级 > 10级 > 7级），与和风原来的 64 节风圈口径一致 */
+    var wr=null;
+    try{
+      var vv=tp[10];
+      if(vv&&vv.length){
+        var best=vv[0], bestRank=-1;
+        for(var k=0;k<vv.length;k++){
+          var lv=String(vv[k][0]||"");
+          var rank=lv==="64KTS"?3:(lv==="50KTS"?2:(lv==="30KTS"?1:-1));
+          if(rank>bestRank){ bestRank=rank; best=vv[k]; }
+        }
+        wr={
+          label:TYPHOON_RADIUS_LEVEL[String(best[0])]||String(best[0]||""),
+          neRadius:best[1], seRadius:best[2], swRadius:best[3], nwRadius:best[4]
+        };
+      }
+    }catch(e2){ wr=null; }
     return {
       time:String(tp[1]||""),
       intensity:TYPHOON_STATUS[lvCode]||lvCode,
       lon:tp[4], lat:tp[5],
       pressure:tp[6], wind:tp[7],
       moveDir:dir16Zh(tp[8])||String(tp[8]||""),
-      moveSpeed:tp[9]
+      moveSpeed:tp[9],
+      windRadius:wr
     };
   }catch(e){ return null; }
 }
 /* 和风实时气象预警（高温/暴雨/大风/雷电/寒潮/沙尘暴/大雾/霾/台风…） */
 var LAST_ALERTS=[];         /* [{eventType:{code,name}, severity, headline, description, color:{code}, issuedTime}] */
 var LAST_ALERTS_AT="";
+/* 本地台风预警（和风 weatheralert 事件码 1001，免费接口） */
+function currentAlertTyphoons(){
+  var out=[];
+  for(var ti=0;ti<LAST_ALERTS.length;ti++){
+    var a=LAST_ALERTS[ti];
+    if(a.eventType && (a.eventType.code==="1001" || a.eventType.name==="台风")){
+      out.push({
+        id:a.id,
+        cn:a.headline?a.headline.replace(/预警信号/,"").replace(/.*?(台风|热带风暴|强热带风暴|强台风|超强台风|热带低压)/,"$1"):"台风",
+        level:a.severity||"",
+        desc:a.description||a.headline||"",
+        src:"alert"
+      });
+    }
+  }
+  return out;
+}
+/* 台风行数据合成：本地预警优先（红色警示），无预警时展示 nmc 远洋跟踪（蓝色信息） */
+function composeTyphoons(){
+  var a=currentAlertTyphoons();
+  if(a.length){ TYPHOONS=a; TYPHOON_AT=LAST_ALERTS_AT; }
+  else{ TYPHOONS=TYPHOONS_NMC.slice(0); TYPHOON_AT=TYPHOON_AT_NMC; }
+  whenIdle(function(){ renderTyphoonLine(); });
+}
 /* 把 JSONP 里的一条数组按顶层逗号切分，正确跳过引号与嵌套括号 */
 function splitTopLevel(s){
   var out=[], buf="", i, c, depth=0, q=false;
@@ -4760,6 +4750,7 @@ function parseTyphoonList(txt){
 }
 function fetchTyphoon(cb){
   cb=cb||function(){};
+  lastTyphoonTs=new Date().getTime();   /* 与 tick 的 30 分钟轮询共用同一时间戳，避免启动重复请求 */
   xhrGet(TYPHOON_URL,function(ok,data){
     if(ok&&data){
       var txt=data.text||"";
@@ -4775,14 +4766,14 @@ function fetchTyphoon(cb){
       }catch(e){} }
       var t=parseTyphoonList(txt);
       if(t){
-        TYPHOONS=t; TYPHOON_AT=nowClock();
+        TYPHOONS_NMC=t; TYPHOON_AT_NMC=nowClock();
         /* 先渲染一版（仅有名称），再逐个补详情 */
-        whenIdle(function(){ renderTyphoonLine(); });
-        /* 逐个拉详情：强度/风速/气压/位置/移向移速。
+        composeTyphoons();
+        /* 逐个拉详情：强度/风速/气压/位置/移向移速/四象限风圈。
            每个详情回来就更新对应台风并重渲染，避免一个失败拖累全部。 */
-        for(var di=0;di<TYPHOONS.length;di++){
+        for(var di=0;di<TYPHOONS_NMC.length;di++){
           (function(idx){
-            var ty=TYPHOONS[idx];
+            var ty=TYPHOONS_NMC[idx];
             if(!ty||!ty.id) return;
             xhrGet("http://typhoon.nmc.cn/weatherservice/typhoon/jsons/view_"+ty.id,function(dok,ddata){
               if(!dok||!ddata) return;
@@ -4795,14 +4786,15 @@ function fetchTyphoon(cb){
               }catch(e2){} }
               var det=parseTyphoonDetail(dtxt);
               if(det){
-                var cur=TYPHOONS[idx];
+                var cur=TYPHOONS_NMC[idx];
                 if(cur){
                   cur.intensity=det.intensity; cur.wind=det.wind; cur.pressure=det.pressure;
                   cur.lat=det.lat; cur.lon=det.lon;
                   cur.moveDir=det.moveDir; cur.moveSpeed=det.moveSpeed; cur.time=det.time;
+                  cur.windRadius=det.windRadius;
                   cur.src="nmc";   /* 远洋跟踪，非本地预警 */
                 }
-                whenIdle(function(){ renderTyphoonLine(); });
+                composeTyphoons();
               }
             });
           })(di);
@@ -4824,26 +4816,28 @@ function typhoonLabel(t){
     var sev=t.level&&sevMap[t.level]?sevMap[t.level]:"";
     return nm+(sev?("（"+sev+"）"):"")+(t.desc?("："+t.desc):"");
   }
-  /* nmc/和风 远洋跟踪：强度/风速/气压/位置/移向/64节大风半径 */
+  /* nmc 远洋跟踪：强度/风速/气压/位置/移向/四象限风圈半径 */
   var parts=[];
   if(t.intensity) parts.push(t.intensity);
   if(t.wind!=null) parts.push(Math.round(t.wind*10)/10+"m/s");
   if(t.pressure!=null) parts.push(t.pressure+"hPa");
-  /* 位置：相对当前定位城市的方位+距离（如"位于东南1290km"），比经纬度直观；
-     cfg.lat/lng 是本次定位落盘的坐标，恒有值（默认北京） */
+  /* 位置：相对"我的位置"的方位+距离（如"位于东南1290km"），比经纬度直观。
+     myPos() 优先用真实定位坐标（Windows WiFi/GPS 或 IP 坐标），
+     只有没有定位坐标时才退回城市中心坐标（默认北京）。 */
   if(t.lat!=null&&t.lon!=null){
-    var d=geoDist(cfg.lat,cfg.lng,t.lat,t.lon);
+    var mp=myPos();
+    var d=geoDist(mp.lat,mp.lng,t.lat,t.lon);
     var dd=d>=100?Math.round(d/10)*10:Math.round(d);
-    parts.push("位于"+bearingDir(cfg.lat,cfg.lng,t.lat,t.lon)+"侧"+dd+"km");
+    parts.push("位于"+bearingDir(mp.lat,mp.lng,t.lat,t.lon)+"侧"+dd+"km");
   }
   if(t.moveDir&&t.moveSpeed!=null) parts.push("向"+t.moveDir+" "+t.moveSpeed+"km/h");
-  /* 64节（约118km/h，强台风级）大风半径，从和风 tropical-cyclone 返回的 windRadius64 */
-  var wr=t.windRadius64;
+  /* 四象限风圈半径（nmc 的 30KTS/50KTS/64KTS → 7/10/12 级风圈） */
+  var wr=t.windRadius;
   if(wr){
     var qMap={neRadius:"东北",seRadius:"东南",swRadius:"西南",nwRadius:"西北"};
     var wrs=[];
     ["neRadius","seRadius","swRadius","nwRadius"].forEach(function(k){ if(wr[k]) wrs.push(qMap[k]+wr[k]); });
-    if(wrs.length) parts.push("12级风圈 "+wrs.join("/")+"km");
+    if(wrs.length) parts.push((wr.label||"")+"风圈 "+wrs.join("/")+"km");
   }
   if(parts.length) return nm+"（"+parts.join(" · ")+"）";
   return nm;
@@ -4864,15 +4858,14 @@ function renderTyphoonLine(){
   var t=typhoonText();
   if(!t){ el.style.display="none"; el.innerHTML=""; return; }
   /* 任意一个台风来自本地预警，就用警示样式 */
-  var isAlert=false, hasQw=false, i;
+  var isAlert=false, i;
   for(i=0;i<TYPHOONS.length;i++){
     if(TYPHOONS[i].src==="alert"){ isAlert=true; }
-    if(TYPHOONS[i].src==="storm"){ hasQw=true; }   /* 和风 tropical-cyclone */
   }
   var icon=isAlert?"⚠":"🌀";
   var cls="tyBox"+(isAlert?" tyAlert":"");
   var prefix=isAlert?"台风预警":"台风";
-  var srcTag=isAlert?"（本地预警）":(hasQw?"（和风跟踪）":"（nmc兜底）");
+  var srcTag=isAlert?"（本地预警）":"（nmc）";
   el.innerHTML="<span class='"+cls+"' title='"+icon+" "+prefix+" "+srcTag+"："+escHtml(t)+(TYPHOON_AT?("（"+TYPHOON_AT+" 更新）"):"")+"'>"
               +icon+" "+prefix+" "+escHtml(t)+"</span>";
   el.style.display="block";
@@ -5137,6 +5130,7 @@ try{ window.onresize=onWinResize; }catch(e){}
       cfg.code=cityMap[city].code;
       cfg.lat=cityMap[city].lat;
       cfg.lng=cityMap[city].lng;
+      cfg.geoLat=0; cfg.geoLng=0;   /* 手动选城市：清掉旧定位坐标，台风距离按新城市算 */
       cfg.geoDone=1;   /* 手动选城市视为明确选择：下次启动不再自动定位覆盖 */
       cfg.manualCity=1;
       /* 重置全部天气缓存，否则新城市名会配旧城市的天气/实况/AQI，
@@ -5224,8 +5218,10 @@ try{ window.onresize=onWinResize; }catch(e){}
   if(!cfg.manualCity) defer(function(){ tryAutoGeo(true); }, 700);
   /* 防"显示桌面"隐藏：窗口若被系统最小化/隐藏，自动还原（用户无法手动最小化，不抢操作） */
   defer(function(){ try{ bindAutoRestore(); }catch(e){} }, 1500);
-  /* 和风有 key 时 typhoon.nmc.cn / wttr.in 都降级为 backup */
-  defer(function(){ if(!qwActiveKey()){ fetchTyphoon(); fetchLive(); } }, 900);
+  /* 台风恒由免费的 typhoon.nmc.cn 提供（启动拉一次，之后每 30 分钟刷新）；
+     无和风 key 时实况由 wttr.in 兜底 */
+  defer(function(){ if(!qwActiveKey()){ fetchLive(); } }, 900);
+  defer(function(){ fetchTyphoon(); }, 900);
   /* 调休安排：启动后延迟同步（避开 onload 阶段的请求限制），之后每天复查一次 */
   defer(function(){ syncHolidays(false, function(st,updated){ if(updated) redrawCurrent(); }); }, 1200);
   tickTimer=setInterval(tick,30000);

@@ -27,3 +27,5 @@ tmp_*.hta
 Thumbs.db
 desktop.ini
 .DS_Store
+.screenshots/
+.dbg.txt
