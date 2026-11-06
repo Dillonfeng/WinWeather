@@ -3466,8 +3466,8 @@ function renderMonth(){
         var f=festivals(y,m,dd,lunar,-1);
         if(f.length){ sub=f[0]; cls="fest"; }
       }
-      if(!sub && adj && adj.type=="work"){
-        sub="<span class='ban'>班</span>";
+      if(adj && adj.type=="work"){
+        sub="<span class='ban'>班</span>"+(sub?sub:"");
       }else if(!sub && adj && adj.type=="off"){
         var nm=adj.name;
         if(nm && !/^初[一二三四五六七八九十]$/.test(nm) && nm!="除夕"){ sub=nm; cls="fest"; }
