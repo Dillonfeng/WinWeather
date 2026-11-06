@@ -133,9 +133,15 @@ html,body{margin:0;padding:0;overflow:hidden;background:#b3251a;
 /* 未来五天天气 */
 .fc5{margin-top:5px;padding-top:4px;border-top:1px dashed #d8b877;}
 .fc5 .cell{display:inline-block;width:20%;text-align:center;vertical-align:top;}
-.fc5 .d{font-size:12.5px;color:#7a6a55;line-height:17px;}
-.fc5 .ic{height:34px;line-height:34px;}
-.fc5 .wsvg{width:30px;height:30px;margin:0;}
+/* 日期+AQI 单行：格子窄时截断而不是换行，保证 fc5 高度稳定、不顶动 sunLine */
+.fc5 .d{font-size:12.5px;color:#7a6a55;line-height:17px;white-space:nowrap;overflow:hidden;}
+/* 天气文字单独占一行（日期与图标之间）：利用原有的垂直空白，
+   "多云转晴"这类长文案单行截断、悬停看全文，不把日期行的 AQI 顶没 */
+.fc5 .wx{font-size:12px;color:#8a7a5f;line-height:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+/* 图标行由 34 压到 22（图 30→22），抵消新增文字行的高度，
+   使 fc5 总高基本不变（约 +3px），不顶动下方 sunLine */
+.fc5 .ic{height:22px;line-height:22px;}
+.fc5 .wsvg{width:22px;height:22px;margin:0;}
 .fc5 .t{font-size:12.5px;color:#a8231a;font-weight:bold;line-height:17px;}
 .aqism{font-size:11.5px;margin-left:3px;font-weight:bold;}
 .tyw{color:#c0392b;font-weight:bold;}
@@ -831,8 +837,11 @@ function isDaytime(now){
    1) 内置种子：保证首次/离线也能用（已核对官方通知）
    2) 本地缓存 holidays.txt：断网时沿用上次结果
    3) 联网增量同步：只请求"缺失或已过期"的年份；
+      每天自动复查一次。数据源链式回退：
+      ① timor.tech（URL+年份）
+      ② NateScarlet/holiday-cn（GitHub 开源，jsDelivr CDN，URL+年份.json）
       国务院未公布的年份接口返回空 -> 保留本地数据、不臆造，
-      每天自动复查一次，等官方公布后自动生效
+      等官方公布后源站更新，次日自动生效。
    ============================================================ */
 /* ============================================================
    自定义节日（结婚纪念日、生日…）
@@ -987,11 +996,20 @@ var HOL_SOURCES=[
   "http://timor.tech/api/holiday/year/",
   "http://www.timor.tech/api/holiday/year/"
 ];
+/* 备用数据源：NateScarlet/holiday-cn（GitHub 社区维护，国务院公布后通常当天更新）
+   格式：{"year":2027,"days":[{"name":"春节","date":"2027-02-05","isOffDay":true},...]}
+   isOffDay=true → 放假，isOffDay=false → 调休补班 */
+var HOL_SOURCES2=[
+  "https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/",
+  "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/"
+];
 
-/* 内置种子（国务院办公厅 国办发明电〔2025〕7号，2026 年安排） */
+/* 内置种子（已核对官方通知；离线兜底，联网后会以源站数据为准覆盖） */
 var HOL_SEED=[
   "2026 off 01-01=元旦,01-02=元旦,01-03=元旦,02-15=春节,02-16=除夕,02-17=初一,02-18=初二,02-19=初三,02-20=初四,02-21=初五,02-22=初六,02-23=初七,04-04=清明节,04-05=清明节,04-06=清明节,05-01=劳动节,05-02=劳动节,05-03=劳动节,05-04=劳动节,05-05=劳动节,06-19=端午节,06-20=端午节,06-21=端午节,09-25=中秋节,09-26=中秋节,09-27=中秋节,10-01=国庆节,10-02=国庆节,10-03=国庆节,10-04=国庆节,10-05=国庆节,10-06=国庆节,10-07=国庆节",
-  "2026 work 01-04=元旦,02-14=春节,02-28=春节,05-09=劳动节,09-20=中秋节,10-10=国庆节"
+  "2026 work 01-04=元旦,02-14=春节,02-28=春节,05-09=劳动节,09-20=中秋节,10-10=国庆节",
+  "2027 off 01-01=元旦,01-02=元旦,01-03=元旦,02-05=春节,02-06=春节,02-07=春节,02-08=春节,02-09=春节,02-10=春节,02-11=春节,02-12=春节,02-13=春节,04-03=清明节,04-04=清明节,04-05=清明节,05-01=劳动节,05-02=劳动节,05-03=劳动节,05-04=劳动节,05-05=劳动节,06-09=端午节,09-15=中秋节,10-01=国庆节,10-02=国庆节,10-03=国庆节,10-04=国庆节,10-05=国庆节,10-06=国庆节,10-07=国庆节",
+  "2027 work 01-31=春节,02-14=春节,05-08=劳动节,09-26=国庆节,10-09=国庆节"
 ];
 function holInit(){
   var i,j,parts;
@@ -1470,7 +1488,7 @@ function holLoad(){
   }catch(e){}
 }
 function holParseApi(text,y){
-  /* 解析 "MM-DD":{"holiday":true/false,...,"name":"..."} */
+  /* timor.tech 格式：{"code":0,"holiday":{"MM-DD":{"holiday":true/false,"name":"..."},...}} */
   var rec=holYear(y), body=/"holiday"\s*:\s*\{([\s\S]*)\}\s*\}\s*$/.exec(text);
   if(!body) return false;
   var inner=body[1], re=/"(\d{2}-\d{2})"\s*:\s*\{([\s\S]*?)\}(?=,"|\s*$)/g, m, found=false;
@@ -1485,17 +1503,47 @@ function holParseApi(text,y){
   if(found) rec.got=true;
   return found;
 }
+/* holiday-cn (NateScarlet) 格式：{"year":2027,"days":[{"name":"春节","date":"2027-02-05","isOffDay":true},...]} */
+function holParseHc(text,y){
+  var rec=holYear(y), days=/"days"\s*:\s*\[([\s\S]*)\]/.exec(text);
+  if(!days) return false;
+  var objs=days[1].split(/\}\s*,\s*\{/), i, found=false;
+  for(i=0;i<objs.length;i++){
+    var s=objs[i];
+    /* date 格式 "2027-01-01" → 取后两段 MM-DD */
+    var dm=/"date"\s*:\s*"\d{4}-(\d{2})-(\d{2})"/.exec(s);
+    var offM=/"isOffDay"\s*:\s*(true|false)/.exec(s);
+    var nm=/"name"\s*:\s*"([^"]*)"/.exec(s);
+    if(!dm||!offM) continue;
+    var md=dm[1]+"-"+dm[2];
+    var name=nm?nm[1]:"";
+    if(offM[1]==="true"){ rec.off[md]=name; } else { rec.work[md]=name; }
+    found=true;
+  }
+  if(found) rec.got=true;
+  return found;
+}
 function holSyncYear(y,cb){
+  /* 链式回退：先试 timor.tech，再试 holiday-cn */
   var idx=0;
-  function attempt(){
-    if(idx>=HOL_SOURCES.length){ cb(false); return; }
+  function attemptTimor(){
+    if(idx>=HOL_SOURCES.length){ attemptHc(); return; }
     var url=HOL_SOURCES[idx++]+y;
     xhrGet(url,function(ok,data){
       if(ok&&data&&data.text&&holParseApi(data.text,y)){ cb(true); }
-      else attempt();
+      else attemptTimor();
     });
   }
-  attempt();
+  var idx2=0;
+  function attemptHc(){
+    if(idx2>=HOL_SOURCES2.length){ cb(false); return; }
+    var url=HOL_SOURCES2[idx2++]+y+".json";
+    xhrGet(url,function(ok,data){
+      if(ok&&data&&data.text&&holParseHc(data.text,y)){ cb(true); }
+      else attemptHc();
+    });
+  }
+  attemptTimor();
 }
 function holNeedSync(){
   var n=new Date();
@@ -2433,7 +2481,8 @@ function renderForecast5(idx){
       /* 和风来源直接有 ymd；天气网来源只有 "M/D"，走 officialYmd 换算 */
       var ymd=f.ymd||officialYmd(base, f.md);
       var lbl=dayLabelOf(ymd);
-      var ic=weatherIcon(f.type||f.day||"阴");
+      var wtxt=f.type||f.day||"";
+      var ic=weatherIcon(wtxt||"阴");
       /* 五日 AQI：和风 air daily 只给 3 天，剩余天数按 ymd 去 lastWeather.forecast 取，
          两者都是同一批组装的数据，aqi>=0 才显示 */
       var fAqi=-1;
@@ -2445,7 +2494,8 @@ function renderForecast5(idx){
       var aAqi=aqiInfo(fAqi);
       var aqHtml=(aAqi)?"<span class='aqism' style='color:"+aAqi.c+";' title='当日预报AQI "+fAqi+" "+aAqi.n+"（非实时）'>"+fAqi+"</span>":"";
       /* 五日预报温度取整：预报天数多、误差±数度，小数无意义且易被格子宽度截断（如末位小数显示不全） */
-      html+="<div class='cell'><div class='d'>"+lbl+aqHtml+"</div><div class='ic'>"+ic+"</div><div class='t'>"+Math.round(f.low)+"~"+Math.round(f.high)+"°</div></div>";
+      var wxHtml=(wtxt)?"<div class='wx' title='"+wtxt+"'>"+wtxt+"</div>":"";
+      html+="<div class='cell'><div class='d'>"+lbl+aqHtml+"</div>"+wxHtml+"<div class='ic'>"+ic+"</div><div class='t'>"+Math.round(f.low)+"~"+Math.round(f.high)+"°</div></div>";
     }
     el.innerHTML=html;
     return;
@@ -2463,8 +2513,10 @@ function renderForecast5(idx){
     var lbl=dayLabelOf(f.ymd);
     var a=aqiInfo(f.aqi);
     var aqHtml=(a)?"<span class='aqism' style='color:"+a.c+";' title='当日预报AQI "+f.aqi+" "+a.n+"（非实时）'>"+f.aqi+"</span>":"";
+    var wxHtml=(f.type)?"<div class='wx' title='"+f.type+"'>"+f.type+"</div>":"";
     html+="<div class='cell'>"
         +"<div class='d'>"+lbl+aqHtml+"</div>"
+        +wxHtml
         +"<div class='ic'>"+weatherIcon(f.type)+"</div>"
         /* 五日预报温度取整（同上，避免小数被格子宽度截断） */
         +"<div class='t'>"+Math.round(f.low)+"~"+Math.round(f.high)+"°</div>"

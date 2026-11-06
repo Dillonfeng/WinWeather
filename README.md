@@ -45,7 +45,7 @@ mshta.exe "老黄历.hta"
 | 气象预警 | 和风 weatheralert 覆盖台风 / 高温 / 暴雨 / 大风 / 雷电 / 寒潮 / 沙尘暴 / 大雾 / 霾 / 干旱 / 冰雹 等 |
 | 台风 | 中国气象局台风网 `typhoon.nmc.cn` 活跃台风跟踪（位置 / 强度 / 风速 / 气压 / 移向移速 / 四象限风圈）；本地台风预警优先展示 |
 | 节日海报 | 自动搜图；节日/生日配图不理想时可在设置里指定图片来源 |
-| 调休同步 | 每天自动从接口同步国务院放假与调休安排 |
+| 调休同步 | 每天自动同步；双源链式回退（timor.tech → holiday-cn），国务院公布后次日自动生效 |
 | 跨天刷新 | 零点后自动翻到新的一天，无需重启 |
 
 ## 设置
@@ -70,7 +70,7 @@ mshta.exe "老黄历.hta"
 | 气象预警（高温/暴雨/大风/…） | 和风 `/weatheralert/v1/current` | — |
 | 台风跟踪（活跃台风 + 实况） | 中国气象局台风网 `typhoon.nmc.cn`（免费、免密钥） | — |
 | 本地台风预警 | 和风 `/weatheralert/v1/current`（事件码 1001） | — |
-| 节假日 | timor.tech | — |
+| 节假日 | timor.tech → [NateScarlet/holiday-cn](https://github.com/NateScarlet/holiday-cn)（链式回退） | 内置种子 |
 | IP 定位 | ip-api.com + ipip.net | — |
 
 > **和风计费说明**（依据官方「按量计费定价」）：天气/预报/预警/天气指数/空气质量/GeoAPI/天文 属于
