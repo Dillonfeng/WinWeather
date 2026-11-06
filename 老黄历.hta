@@ -834,14 +834,14 @@ function isDaytime(now){
 
 /* ============================================================
    国务院放假调休安排 —— 分层同步策略
-   1) 内置种子：保证首次/离线也能用（已核对官方通知）
-   2) 本地缓存 holidays.txt：断网时沿用上次结果
-   3) 联网增量同步：只请求"缺失或已过期"的年份；
-      每天自动复查一次。数据源链式回退：
-      ① timor.tech（URL+年份）
-      ② NateScarlet/holiday-cn（GitHub 开源，jsDelivr CDN，URL+年份.json）
-      国务院未公布的年份接口返回空 -> 保留本地数据、不臆造，
-      等官方公布后源站更新，次日自动生效。
+   1) 内置种子：保证首次/离线也能用（已核对官方通知），状态显示"内置"
+   2) 本地缓存 holidays.txt：断网时沿用上次结果，状态显示"已同步"
+   3) 联网增量同步：每天复查一次。数据源链式回退：
+      ① NateScarlet/holiday-cn（GitHub 开源，jsDelivr CDN，公布当天/次日更新）
+      ② timor.tech（URL+年份，作为备用源）
+      当前年每天强制复核（捕捉官方可能的微调）；未来年份仅在缺失时请求。
+      国务院未公布的年份两源均返回空/404 -> 保留本地数据、不臆造，
+      状态显示"待公布"，等官方公布后源站更新，次日自动生效。
    ============================================================ */
 /* ============================================================
    自定义节日（结婚纪念日、生日…）
@@ -992,16 +992,18 @@ function bindMarquee(){
 
 var HOL={};        /* HOL[年] = {off:{"MM-DD":名称}, work:{"MM-DD":名称}} */
 var HOL_LAST="";   /* 上次成功同步日期 YYYY-MM-DD */
-var HOL_SOURCES=[
-  "http://timor.tech/api/holiday/year/",
-  "http://www.timor.tech/api/holiday/year/"
-];
-/* 备用数据源：NateScarlet/holiday-cn（GitHub 社区维护，国务院公布后通常当天更新）
+/* 主数据源：NateScarlet/holiday-cn（GitHub 社区维护，国务院公布后通常当天/次日更新，
+   还附带官方文件出处 papers[]）。
    格式：{"year":2027,"days":[{"name":"春节","date":"2027-02-05","isOffDay":true},...]}
    isOffDay=true → 放假，isOffDay=false → 调休补班 */
-var HOL_SOURCES2=[
+var HOL_SOURCES=[
   "https://cdn.jsdelivr.net/gh/NateScarlet/holiday-cn@master/",
   "https://raw.githubusercontent.com/NateScarlet/holiday-cn/master/"
+];
+/* 备用数据源：timor.tech（更新较慢，作为 holiday-cn 不可用时的回退） */
+var HOL_SOURCES2=[
+  "http://timor.tech/api/holiday/year/",
+  "http://www.timor.tech/api/holiday/year/"
 ];
 
 /* 内置种子（已核对官方通知；离线兜底，联网后会以源站数据为准覆盖） */
@@ -1030,7 +1032,7 @@ function holYear(y){
   if(!HOL[k]) HOL[k]={off:{},work:{},got:false};
   return HOL[k];
 }
-function holHasYear(y){ var k=String(y); return !!(HOL[k] && (HOL[k].got || Object.keys(HOL[k].off).length || Object.keys(HOL[k].work).length)); }
+function holHasYear(y){ var k=String(y); return !!(HOL[k] && HOL[k].got); }
 function holDay(y,m,d){
   var k=String(y);
   var md=("0"+m).slice(-2)+"-"+("0"+d).slice(-2);
@@ -1488,6 +1490,7 @@ function holLoad(){
   }catch(e){}
 }
 function holParseApi(text,y){
+  var off={}, work={};
   /* timor.tech 格式：{"code":0,"holiday":{"MM-DD":{"holiday":true/false,"name":"..."},...}} */
   var rec=holYear(y), body=/"holiday"\s*:\s*\{([\s\S]*)\}\s*\}\s*$/.exec(text);
   if(!body) return false;
@@ -1497,14 +1500,15 @@ function holParseApi(text,y){
     var isOff=/"holiday"\s*:\s*true/.test(one);
     var nm=/"name"\s*:\s*"([^"]*)"/.exec(one);
     var name=nm?nm[1]:"";
-    if(isOff){ rec.off[m[1]]=name; } else { rec.work[m[1]]=name; }
+    if(isOff){ off[m[1]]=name; } else { work[m[1]]=name; }
     found=true;
   }
-  if(found) rec.got=true;
+  if(found){ rec.off=off; rec.work=work; rec.got=true; }
   return found;
 }
 /* holiday-cn (NateScarlet) 格式：{"year":2027,"days":[{"name":"春节","date":"2027-02-05","isOffDay":true},...]} */
 function holParseHc(text,y){
+  var off={}, work={};
   var rec=holYear(y), days=/"days"\s*:\s*\[([\s\S]*)\]/.exec(text);
   if(!days) return false;
   var objs=days[1].split(/\}\s*,\s*\{/), i, found=false;
@@ -1517,43 +1521,58 @@ function holParseHc(text,y){
     if(!dm||!offM) continue;
     var md=dm[1]+"-"+dm[2];
     var name=nm?nm[1]:"";
-    if(offM[1]==="true"){ rec.off[md]=name; } else { rec.work[md]=name; }
+    if(offM[1]==="true"){ off[md]=name; } else { work[md]=name; }
     found=true;
   }
-  if(found) rec.got=true;
+  if(found){ rec.off=off; rec.work=work; rec.got=true; }
   return found;
 }
 function holSyncYear(y,cb){
-  /* 链式回退：先试 timor.tech，再试 holiday-cn */
+  /* 链式回退：先试 holiday-cn（主源，更新快、附官方出处），再试 timor.tech（备源） */
   var idx=0;
-  function attemptTimor(){
-    if(idx>=HOL_SOURCES.length){ attemptHc(); return; }
-    var url=HOL_SOURCES[idx++]+y;
-    xhrGet(url,function(ok,data){
-      if(ok&&data&&data.text&&holParseApi(data.text,y)){ cb(true); }
-      else attemptTimor();
-    });
-  }
-  var idx2=0;
   function attemptHc(){
-    if(idx2>=HOL_SOURCES2.length){ cb(false); return; }
-    var url=HOL_SOURCES2[idx2++]+y+".json";
+    if(idx>=HOL_SOURCES.length){ attemptTimor(); return; }
+    var url=HOL_SOURCES[idx++]+y+".json";
     xhrGet(url,function(ok,data){
-      if(ok&&data&&data.text&&holParseHc(data.text,y)){ cb(true); }
+      if(ok&&data&&data.text&&holParseHc(data.text,y)){ _log("[Holiday] "+y+" <- holiday-cn"); cb(true); }
       else attemptHc();
     });
   }
-  attemptTimor();
+  var idx2=0;
+  function attemptTimor(){
+    if(idx2>=HOL_SOURCES2.length){ _log("[Holiday] "+y+" both sources unavailable"); cb(false); return; }
+    var url=HOL_SOURCES2[idx2++]+y;
+    xhrGet(url,function(ok,data){
+      if(ok&&data&&data.text&&holParseApi(data.text,y)){ _log("[Holiday] "+y+" <- timor.tech"); cb(true); }
+      else attemptTimor();
+    });
+  }
+  attemptHc();
 }
 function holNeedSync(){
   var n=new Date();
   var today=n.getFullYear()+"-"+("0"+(n.getMonth()+1)).slice(-2)+"-"+("0"+n.getDate()).slice(-2);
   return (HOL_LAST!==today);
 }
+function holHasData(y){
+  var rec=HOL[String(y)];
+  return !!(rec && ((rec.off && Object.keys(rec.off).length) || (rec.work && Object.keys(rec.work).length)));
+}
+/* 三态：已同步（联网/缓存取到）> 内置（仅离线种子）> 待公布（无任何数据） */
+function holState(y){
+  var rec=HOL[String(y)];
+  if(rec && rec.got) return "调休已同步";
+  if(holHasData(y)) return "调休内置(离线)";
+  return "调休待公布";
+}
 function holStatusText(){
-  var n=new Date(), out=[], ys=[n.getFullYear(), n.getFullYear()+1];
-  for(var i=0;i<ys.length;i++){
-    out.push(ys[i]+"年"+(holHasYear(ys[i])?"已同步":"待公布"));
+  var n=new Date(), out=[], ys=[n.getFullYear(), n.getFullYear()+1], i, rec, st;
+  for(i=0;i<ys.length;i++){
+    rec=HOL[String(ys[i])];
+    if(rec && rec.got) st="已同步";
+    else if(holHasData(ys[i])) st="内置";
+    else st="待公布";
+    out.push(ys[i]+"年"+st);
   }
   return out.join("　");
 }
@@ -1572,7 +1591,8 @@ function syncHolidays(force,cb){
       return;
     }
     var y=years[i++];
-    if(!force && holHasYear(y)){ next(); return; }   /* 已有数据，除非强制，否则不重复请求 */
+    /* 当前年每天复核（捕捉官方微调）；未来年份已有真实数据则跳过（防重复请求） */
+    if(y>n.getFullYear() && !force && HOL[String(y)] && HOL[String(y)].got){ next(); return; }
     defer(function(){
       holSyncYear(y,function(ok){
         if(ok) updated++;
@@ -3414,7 +3434,7 @@ function renderCalHead(ws){
 function renderMonth(){
   var y=viewY, m=viewM;
   document.getElementById("mTitle").innerHTML=y+"年 "+m+"月"
-    +"<span class='sync'>"+(holHasYear(y)?"调休已同步":"调休待公布")+"</span>";
+    +"<span class='sync'>"+holState(y)+"</span>";
   var first=new Date(y,m-1,1);
   var ws=(cfg.weekStart===0)?0:1;        /* 0=周日开头 1=周一开头 */
   renderCalHead(ws);
