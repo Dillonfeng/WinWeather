@@ -1189,6 +1189,57 @@ function schoolDay(y,m,d){
   if(!rec) return null;
   return rec[ymdKey(new Date(y,m-1,d))]||null;
 }
+
+/* ---------- 假期进度：春节/国庆等调休假期 + 春秋假/寒暑假 ----------
+   仅用于黄历主界面 banner：
+     第一天 → "今日 XX"；中间 → "XX 第N天"；最后一天 → "XX 最后一天"。
+   万年历仍走 festivals()/holDay() 原逻辑，不受影响。 */
+function offNameAt(dt){
+  var rec=HOL[String(dt.getFullYear())];
+  if(!rec || !rec.off) return null;
+  var md=("0"+(dt.getMonth()+1)).slice(-2)+"-"+("0"+dt.getDate()).slice(-2);
+  var v=rec.off[md];
+  return (v==null)? null : (v||"休");
+}
+/* 国务院调休假期：同一名称的连续休息日视为一个假期段（自动处理跨月/跨年） */
+function holProgAt(y,m,d){
+  var name=offNameAt(new Date(y,m-1,d));
+  if(!name || name==="休") return null;
+  var start=new Date(y,m-1,d), end=new Date(y,m-1,d), i, p, q;
+  for(i=0;i<40;i++){
+    p=new Date(start.getFullYear(),start.getMonth(),start.getDate()-1);
+    if(offNameAt(p)!==name) break;
+    start=p;
+  }
+  for(i=0;i<40;i++){
+    q=new Date(end.getFullYear(),end.getMonth(),end.getDate()+1);
+    if(offNameAt(q)!==name) break;
+    end=q;
+  }
+  var idx=Math.round((Date.UTC(y,m-1,d)-Date.UTC(start.getFullYear(),start.getMonth(),start.getDate()))/86400000)+1;
+  var total=Math.round((Date.UTC(end.getFullYear(),end.getMonth(),end.getDate())-Date.UTC(start.getFullYear(),start.getMonth(),start.getDate()))/86400000)+1;
+  return {name:name, idx:idx, total:total};
+}
+/* 学校假期：直接按校历 terms 的起止日期计算，寒暑假(sparse)也能拿到完整区间 */
+function schoolProgAt(y,m,d){
+  if(!cfg.showSchool) return null;
+  var seed=schoolSeedOf(cfg.city); if(!seed) return null;
+  var cur=Date.UTC(y,m-1,d), i, t, a, b;
+  for(i=0;i<seed.terms.length;i++){
+    t=seed.terms[i];
+    a=Date.UTC(t.f[0],t.f[1]-1,t.f[2]);
+    b=Date.UTC(t.t[0],t.t[1]-1,t.t[2]);
+    if(cur>=a && cur<=b){
+      return {name:t.n, idx:Math.round((cur-a)/86400000)+1, total:Math.round((b-a)/86400000)+1};
+    }
+  }
+  return null;
+}
+function progText(p){
+  if(p.total<=1 || p.idx===1) return "今日 "+p.name;
+  if(p.idx===p.total) return p.name+" 最后一天";
+  return p.name+" 第"+p.idx+"天";
+}
 function schoolStatusText(){
   var rec=schoolSeedOf(cfg.city);
   if(!rec) return "无该校历数据";
@@ -2625,9 +2676,21 @@ function renderDay(){
              +  "距入"+seasonInfo.nextName+" 约"+seasonInfo.daysToNext+"天</span>";
     }
   }
-  if(f.length){
+  /* 假期进度：国务院调休（春节/国庆等）+ 学校假期（春秋假/寒暑假）。
+     与固定节日同名的（如"春节"）从节日列表中去掉，由进度文案接管，避免重复；
+     海报选图仍用原始 f，不受影响。 */
+  var hp=holProgAt(y,m,d), sp=schoolProgAt(y,m,d);
+  var fdisp=f.slice(), rdi;
+  if(hp){ rdi=fdisp.indexOf(hp.name); if(rdi>=0) fdisp.splice(rdi,1); }
+  var shl=schoolDay(y,m,d);
+  if(shl){ rdi=fdisp.indexOf(shl); if(rdi>=0) fdisp.splice(rdi,1); }
+  var fparts=[];
+  if(fdisp.length) fparts.push("今日 "+fdisp.join("　"));
+  if(hp) fparts.push(progText(hp));
+  if(sp) fparts.push(progText(sp));
+  if(fparts.length){
     if(banner) banner += "　·　";
-    banner += "<span style='white-space:nowrap;'>今日 "+f.join("　");
+    banner += "<span style='white-space:nowrap;'>"+fparts.join("　");
     if(posterKey) banner += "<span class='more'>▸ 查看大图</span>";
     banner += "</span>";
   }
