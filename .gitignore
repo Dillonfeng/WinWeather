@@ -1,6 +1,7 @@
 # ---- 运行时缓存：程序自动生成/自动更新，无需入库 ----
 holidays.txt
 school.txt
+season.txt
 images/poster_urls.txt
 hl_geoloc.ps1
 hl_geo.txt

@@ -1765,6 +1765,314 @@ function fetchUvNow(){
 }
 
 /* ============================================================
+   气象季节 —— 依据 GB/T 42047-2022《气候季节划分》
+   数据源：Open-Meteo Archive（archive-api.open-meteo.com，免费、免 key、历史数据完整）
+
+   判定口径（与气象局官宣一致，以深圳 2026 入秋为例）：
+     "11月9日-13日五天滑动平均气温为21.6℃（满足＜22℃标准），
+      五天中首个日平均气温＜22℃的日期为11月10日，即 11月10日入秋"
+   → 取第一个 5 天窗口，其平均气温达到阈值即为入季窗口；
+     入季日期 = 该窗口内第一个日平均气温达到阈值的日期。
+   → 不做"连续多个滑均值都达标"的额外要求：那会把入秋硬推迟一周多，
+     而且像深圳这种入秋后又有回暖的年份，会被误判成"至今未入秋"。
+     误判由"月份排除 + 春夏秋冬顺序判定"来兜底。
+   ============================================================ */
+var SEASON_EMOJI={spring:"🌸",summer:"☀️",autumn:"🍂",winter:"❄️"};
+var SEASON_NAME={spring:"春季",summer:"夏季",autumn:"秋季",winter:"冬季"};
+var SEASON_SHORT={spring:"春",summer:"夏",autumn:"秋",winter:"冬"};
+/* 4 个季节判定的阈值与比较方向（春/夏是"升破"，秋/冬是"跌破"）
+   monthReject：该季节"绝对不可能"出现的月份（排除边界）
+   —— 春不会在 6-12 月，夏不会在 1-3 月，秋不会在 1-6 月，冬不会在 4-9 月
+   比精确的"允许月份范围"更宽容，允许深圳 1 月就是春、哈尔滨 3 月还没入春等真实情况 */
+var SEASON_RULES=[
+  {key:"spring", name:"春",  thresh:10,  cmp:"ge", rejectMin:6,  rejectMax:12},
+  {key:"summer", name:"夏",  thresh:22,  cmp:"ge", rejectMin:1,  rejectMax:3},
+  {key:"autumn", name:"秋",  thresh:22,  cmp:"le", rejectMin:1,  rejectMax:6},
+  {key:"winter", name:"冬",  thresh:10,  cmp:"le", rejectMin:4,  rejectMax:9}
+];
+var seasonCache={};  /* {year: {spring:'MM-DD',summer:'MM-DD',autumn:'MM-DD',winter:'MM-DD'}, ...} */
+
+function seasonCachePath(){ var f=appFolder(); return f? f+"\\season.txt" : ""; }
+function seasonLoad(){
+  seasonCache={};
+  var p=seasonCachePath(); if(!p) return;
+  try{
+    var fso=fsoObj(); if(!fso.FileExists(p)) return;
+    var f=fso.OpenTextFile(p,1), s=f.ReadAll(); f.Close();
+    /* 旧版缓存直接作废（v1/v2 的判定偏严，会导致南方地区迟迟不判入秋），触发重新计算 */
+    if(s.indexOf("#v3")<0) return;
+    var lines=s.split("\n"), i;
+    for(i=0;i<lines.length;i++){
+      var ln=lines[i].replace(/^\s+|\s+$/g,""); if(!ln||ln.charAt(0)=="#") continue;
+      var parts=ln.split(" "); if(parts.length<2) continue;
+      var y=parseInt(parts[0],10); if(!y) continue;
+      var rec={};
+      if(parts[1]&&parts[1]!=="-") rec.spring=parts[1];
+      if(parts[2]&&parts[2]!=="-") rec.summer=parts[2];
+      if(parts[3]&&parts[3]!=="-") rec.autumn=parts[3];
+      if(parts[4]&&parts[4]!=="-") rec.winter=parts[4];
+      /* 校验：春→夏→秋→冬 的起始日必须单调递增，否则是旧版本/错误数据，整年丢弃重算 */
+      var okSeq=true, last="";
+      var seq=["spring","summer","autumn","winter"], si;
+      for(si=0;si<4;si++){
+        if(rec[seq[si]]){
+          if(rec[seq[si]]<last){ okSeq=false; break; }
+          last=rec[seq[si]];
+        }
+      }
+      if(okSeq) seasonCache[y]=rec;
+    }
+  }catch(e){}
+}
+function seasonSave(){
+  var p=seasonCachePath(); if(!p) return;
+  try{
+    var fso=fsoObj(), lines=["#v3 气象季节缓存 格式：年 春 夏 秋 冬（MM-DD，- = 未入）"], y, rec, txt="";
+    for(y in seasonCache){
+      if(!Object.prototype.hasOwnProperty.call(seasonCache,y)) continue;
+      rec=seasonCache[y];
+      txt+=y+" "+(rec.spring||"-")+" "+(rec.summer||"-")+" "+(rec.autumn||"-")+" "+(rec.winter||"-")+"\n";
+    }
+    lines.push(txt);
+    fso.CreateTextFile(p,true).Write(lines.join("\n"));
+  }catch(e){}
+}
+/* cmp: 'ge' = a >= b, 'le' = a <= b */
+function seasonCmp(a,b,cmp){ return cmp==="ge"? (a>=b) : (a<=b); }
+
+/* 从索引 startFrom 开始，找到第一个"5 天窗口平均气温"满足 rule 条件的窗口，
+   返回该窗口内第一个日平均气温满足条件的日期（即入季日）；不存在则返回 null。
+   关键：春/夏/秋/冬 必须按顺序判定——每个季节的搜索起点是"上一个季节之后"，
+   否则深圳 1 月的低温会被误判为"入秋"（它确实满足"5 天滑均 <22"，但它在入夏之前！）
+   这里严格按气象局口径：只认第一个达标窗口，不要求后续窗口继续达标。 */
+function seasonFindStart(temps, rule, startFrom){
+  if(!temps || temps.length<5) return null;
+  if(startFrom<0) startFrom=0;
+  var n=temps.length, i, j, k;
+  for(i=startFrom;i+5<=n;i++){
+    var sum=0;
+    for(k=0;k<5;k++) sum+=temps[i+k].t;
+    if(!seasonCmp(sum/5, rule.thresh, rule.cmp)) continue;
+    /* 入季日 = 窗口内第一个日平均气温达标的日期 */
+    for(j=i;j<i+5 && j<n;j++){
+      if(seasonCmp(temps[j].t, rule.thresh, rule.cmp)) return temps[j].d;
+    }
+    return temps[i].d;
+  }
+  return null;
+}
+
+/* 给定 rule 和候选日期 'YYYY-MM-DD'，检查是否落在"可接受的月份"内。
+   用排除法：rejectMin~rejectMax 范围外的月份才合法。
+   比如春的 rejectMin=6, rejectMax=12 → 只有 1-5 月才允许 */
+function seasonInMonthRange(rule, dateStr){
+  var mo=parseInt(dateStr.slice(5,7),10);
+  /* 春 rejectMin=6, rejectMax=12：如果 mo 在 [6,12] 范围内就排除 */
+  /* 夏 rejectMin=1, rejectMax=3：如果 mo 在 [1,3] 范围内就排除 */
+  return !(mo>=rule.rejectMin && mo<=rule.rejectMax);
+}
+
+/* 按 GB/T 42047 顺序判定春夏秋冬：每个季节从前一个之后开始找，
+   且必须落在该季节的合理月份范围内（避免短暂降温误判为入秋等）。
+   如果跳过了月份范围（比如入夏太早导致入秋窗口被挤到范围外），
+   则回退到"独立搜索 + 月份范围约束"模式 */
+function seasonComputeOrdered(temps){
+  if(!temps || temps.length<9) return null;
+  var rec={};
+  var searchFrom=0;
+  for(var si=0;si<SEASON_RULES.length;si++){
+    var rule=SEASON_RULES[si];
+    /* 多次尝试：如果从 searchFrom 找到的日期不在月份范围内，就继续往后找 */
+    var attempts=0, found=null, fromHere=searchFrom;
+    while(attempts++<30){
+      var d=seasonFindStart(temps, rule, fromHere);
+      if(!d) break;
+      if(seasonInMonthRange(rule, d)){ found=d; break; }
+      /* 不在合法月份范围，跳过这个窗口，往后继续 */
+      for(var fi=fromHere;fi<temps.length;fi++){
+        if(temps[fi].d===d){ fromHere=fi+1; break; }
+      }
+    }
+    if(found){
+      rec[rule.key]=found.slice(5);
+      for(var ti=0;ti<temps.length;ti++){
+        if(temps[ti].d===found){ searchFrom=ti+1; break; }
+      }
+    } else {
+      rec[rule.key]=null;
+    }
+  }
+  return rec;
+}
+
+/* 从 Open-Meteo Archive 拉取某年 1月1日 至 昨天 的气温数据 */
+function seasonFetchTemp(y, cb){
+  if(!cfg.lat||!cfg.lng){ if(cb) cb(null,"no_coord"); return; }
+  var today=new Date();
+  /* 结束日期：昨天（archive 可能不包含今天） */
+  var end=new Date(today.getFullYear(),today.getMonth(),today.getDate()-1);
+  /* 开始日期：如果是当年，用 1月1日；如果需要跨年数据做 12 月 → 1 月的衔接（入春可能在 12 月末），
+     就从上一年 12月15日 起拉。简化：当年从 1月1日 起 */
+  var start;
+  if(y===today.getFullYear()){ start=new Date(y,0,1); }
+  else { start=new Date(y,0,1); end=new Date(y,11,31); }
+  var fmt=function(d){ return d.getFullYear()+"-"+("0"+(d.getMonth()+1)).slice(-2)+"-"+("0"+d.getDate()).slice(-2); };
+  var url="https://archive-api.open-meteo.com/v1/archive"
+    +"?latitude="+cfg.lat+"&longitude="+cfg.lng
+    +"&start_date="+fmt(start)+"&end_date="+fmt(end)
+    +"&daily=temperature_2m_mean&timezone=Asia%2FShanghai";
+  var xhr=null;
+  try{ xhr=regXhr(new ActiveXObject("MSXML2.ServerXMLHTTP.6.0")); }catch(e){ if(cb) cb(null,"no_xhr"); return; }
+  if(!xhr){ if(cb) cb(null,"no_xhr"); return; }
+  try{
+    try{ xhr.setTimeouts(12000,12000,12000,12000); }catch(e0){}
+    xhr.open("GET",url,true);
+    try{ xhr.setRequestHeader("User-Agent","Mozilla/5.0 (compatible; MSIE 10.0; Windows NT 6.2; Trident/6.0)"); }catch(e1){}
+    xhr.onreadystatechange=function(){
+      if(xhr.readyState!==4) return;
+      if(xhr.status!==200){ _log("[Season] HTTP="+xhr.status); if(cb) cb(null,"http_"+xhr.status); return; }
+      try{
+        var t=xhr.responseText||"";
+        /* IE9 环境安全 JSON 解析 */
+        var daily=null;
+        try{
+          if(typeof JSON!=="undefined" && JSON.parse){
+            var parsed=JSON.parse(t); daily=parsed.daily;
+          }
+        }catch(ee){}
+        if(!daily){
+          /* 兜底正则解析 */
+          var tm=t.match(/"time"\s*:\s*\[([\s\S]*?)\]\s*,\s*"temperature_2m_mean"\s*:\s*\[([\s\S]*?)\]/);
+          if(tm){
+            var times=tm[1].match(/"([0-9-]+)"/g)||[];
+            var vals=tm[2].match(/-?[0-9.]+/g)||[];
+            daily={time:[], temperature_2m_mean:[]};
+            for(var k=0;k<times.length;k++) daily.time.push(times[k].replace(/"/g,""));
+            for(var kk=0;kk<vals.length;kk++) daily.temperature_2m_mean.push(parseFloat(vals[kk]));
+          }
+        }
+        if(!daily||!daily.time||daily.time.length<9){ _log("[Season] data too short"); if(cb) cb(null,"short"); return; }
+        /* 转成 [{d:'YYYY-MM-DD', t:number}] */
+        var arr=[], i;
+        for(i=0;i<daily.time.length;i++){
+          var tv=daily.temperature_2m_mean[i];
+          if(typeof tv==="number" && isFinite(tv)) arr.push({d:daily.time[i], t:tv});
+        }
+        if(arr.length<9){ _log("[Season] valid days < 9"); if(cb) cb(null,"short"); return; }
+        _log("[Season] got "+arr.length+" days temp for "+y);
+        /* 按国标顺序判定：春→夏→秋→冬，每个季节从前一个之后开始找 */
+        var rec=seasonComputeOrdered(arr);
+        seasonCache[y]=rec;
+        seasonSave();
+        _log("[Season] y="+y+" "+JSON.stringify(rec));
+        if(cb) cb(rec,null);
+      }catch(err){ _log("[Season] parse err: "+err); if(cb) cb(null,"parse_err"); }
+    };
+    xhr.send(null);
+  }catch(e){ if(cb) cb(null,"send_err"); }
+}
+
+/* 确保 y 年的季节数据已就绪。若已缓存则立即返回；否则异步拉取，完成后刷新 UI */
+var seasonFetching={};  /* 正在拉的年份 {year:true} */
+function ensureSeason(y){
+  if(seasonCache[y] && (seasonCache[y].spring||seasonCache[y].summer||seasonCache[y].autumn||seasonCache[y].winter)){
+    return seasonCache[y];
+  }
+  if(seasonFetching[y]) return null;  /* 正在拉 */
+  seasonFetching[y]=true;
+  seasonFetchTemp(y, function(rec,err){
+    seasonFetching[y]=false;
+    if(rec){
+      /* 刷新 UI（如果当前显示的年份就是这个） */
+      var now=new Date();
+      if(!inMonthView && cur.getFullYear()===y && typeof renderDay==="function"){
+        whenIdle(renderDay);
+      }else if(inMonthView && viewY===y && typeof renderMonth==="function"){
+        whenIdle(renderMonth);
+      }
+    }
+  });
+  return null;  /* 还没算好 */
+}
+
+/* 给定年/月/日，返回当前所处的季节信息。
+   返回 {key, name, short, emoji, since:'MM-DD', daysIn:已入季第几天,
+         daysToNext, nextName, nextDate} */
+function currentSeason(y,m,d){
+  var order=["spring","summer","autumn","winter"];
+  var rec=seasonCache[y];
+  var todayMD=("0"+m).slice(-2)+"-"+("0"+d).slice(-2);
+  var picked=-1, info=null;
+
+  if(rec){
+    /* 二次校验：只保留从春到冬单调递增的起始日，防止脏数据造成"入冬早于入秋" */
+    var keys=[null,null,null,null], last="", i;
+    for(i=0;i<4;i++){
+      var v=rec[order[i]];
+      if(v && v>=last){ keys[i]=v; last=v; }
+    }
+    for(i=0;i<4;i++){ if(keys[i] && keys[i]<=todayMD) picked=i; }
+    if(picked>=0){
+      info={
+        key:order[picked],
+        name:SEASON_NAME[order[picked]],
+        short:SEASON_SHORT[order[picked]],
+        emoji:SEASON_EMOJI[order[picked]],
+        since:keys[picked]
+      };
+      var sinceUTC=Date.UTC(y, parseInt(keys[picked].slice(0,2),10)-1, parseInt(keys[picked].slice(3),10));
+      var todayUTC=Date.UTC(y, m-1, d);
+      info.daysIn=Math.round((todayUTC-sinceUTC)/86400000)+1;
+      /* 下一个季节：必须是年内更晚的，或次年 spring；找不到就不显示，
+         绝不把"已经过去的日期"当成"还有 N 天" */
+      for(var step=1;step<=3;step++){
+        var ni=picked+step;
+        if(ni>3){  /* 跨年：需要次年的数据，没有就放弃 */
+          var nk=seasonCache[y+1];
+          if(!nk) break;
+          var nv=nk[order[ni-4]];
+          if(!nv) break;
+          var ndUTC=Date.UTC(y+1, parseInt(nv.slice(0,2),10)-1, parseInt(nv.slice(3),10));
+          var dn=Math.round((ndUTC-todayUTC)/86400000);
+          if(dn>0){
+            info.daysToNext=dn; info.nextName=SEASON_SHORT[order[ni-4]]; info.nextDate=nv;
+          }
+          break;
+        }
+        if(!keys[ni]) continue;  /* 该季节今年还没入，跳过 */
+        var nextUTC=Date.UTC(y, parseInt(keys[ni].slice(0,2),10)-1, parseInt(keys[ni].slice(3),10));
+        var days=Math.round((nextUTC-todayUTC)/86400000);
+        if(days>0){
+          info.daysToNext=days; info.nextName=SEASON_SHORT[order[ni]]; info.nextDate=keys[ni];
+          break;
+        }
+      }
+      return info;
+    }
+  }
+
+  /* 今天早于当年第一个季节起始日（如北方 1-2 月仍在延续上一年冬季）：
+     用上一年冬季补位，避免整块信息消失 */
+  var prev=seasonCache[y-1];
+  if(prev && prev.winter){
+    var wUTC=Date.UTC(y-1, parseInt(prev.winter.slice(0,2),10)-1, parseInt(prev.winter.slice(3),10));
+    var tUTC=Date.UTC(y, m-1, d);
+    info={
+      key:"winter", name:SEASON_NAME.winter, short:SEASON_SHORT.winter,
+      emoji:SEASON_EMOJI.winter, since:prev.winter,
+      daysIn:Math.round((tUTC-wUTC)/86400000)+1
+    };
+    if(rec && rec.spring){
+      var spUTC=Date.UTC(y, parseInt(rec.spring.slice(0,2),10)-1, parseInt(rec.spring.slice(3),10));
+      var dsp=Math.round((spUTC-tUTC)/86400000);
+      if(dsp>0){ info.daysToNext=dsp; info.nextName="春"; info.nextDate=rec.spring; }
+    }
+    return info;
+  }
+  return null;
+}
+
+/* ============================================================
    天气（中国气象局数据，sojson 接口，国内可直连）
    ============================================================ */
 var cityMap={
@@ -2297,20 +2605,36 @@ function renderDay(){
   sd.innerHTML=d;
   document.getElementById("lunarLine").innerHTML="农历 "+(lunar.isLeap?"闰":"")+monthName(lunar.month)+cDay(lunar.day);
   document.getElementById("gzLine").innerHTML=p.yGan+p.yZhi+"("+p.yAnimal+")年　"+p.mGan+p.mZhi+"月　"+p.dGan+p.dZhi+"日";
-  var banner="&nbsp;";
+  var banner="";
   var newKey = posterPickName(f);
   /* 只有节日真的换了才复位 posterDetail，
      否则后台天气回来触发 renderDay 会让海报自己乱跳出来 */
   if(newKey !== posterKey){ posterDetail = false; }
   posterKey = newKey;
-  if(f.length){
-    banner="今日 "+f.join("　");
-    if(posterKey) banner+="<span class='more'>▸ 查看大图</span>";
+  /* 气象季节：异步就绪后拼入 banner；同时确保当年数据在后台拉取 */
+  var seasonInfo=currentSeason(y,m,d);
+  if(!seasonInfo) ensureSeason(y);  /* 还没缓存，触发后台拉取 */
+  if(seasonInfo){
+    /* 注明"气象"，与节气（立冬/立春等天文时刻）区分开；
+       起始日期放进 title，正文只留"气象X季 第N天"，避免过长换行 */
+    banner += "<b style='color:#8a4a12;letter-spacing:1px;white-space:nowrap;'"
+           +  " title='气象季节（连续5天平均气温达标，与节气无关）："+seasonInfo.since+"入"+seasonInfo.short+"'>"
+           +  seasonInfo.emoji+" 气象"+seasonInfo.name+" 第"+seasonInfo.daysIn+"天</b>";
+    if(seasonInfo.daysToNext && seasonInfo.nextName){
+      banner += "<span style='color:#a8231a;font-size:15px;font-weight:normal;margin-left:6px;white-space:nowrap;'>"
+             +  "距入"+seasonInfo.nextName+" 约"+seasonInfo.daysToNext+"天</span>";
+    }
   }
-  document.getElementById("festLine").className=(f.length&&posterKey)?"banner has":"banner";
-  /* 没有节日时不保留空行，否则会白占约 23px，让「干支↔宜忌」之间出现空洞 */
-  document.getElementById("festLine").style.display=(f.length)?"block":"none";
-  document.getElementById("festLine").innerHTML=banner;
+  if(f.length){
+    if(banner) banner += "　·　";
+    banner += "<span style='white-space:nowrap;'>今日 "+f.join("　");
+    if(posterKey) banner += "<span class='more'>▸ 查看大图</span>";
+    banner += "</span>";
+  }
+  document.getElementById("festLine").className=(banner&&posterKey)?"banner has":"banner";
+  /* 无季节也无节日时，彻底隐藏 banner，不让它白占空隙 */
+  document.getElementById("festLine").style.display=(banner)?"block":"none";
+  document.getElementById("festLine").innerHTML=banner||"&nbsp;";
   var off=(p.dBranchIdx-p.mBranchIdx+12)%12;
   document.getElementById("yiList").innerHTML=OfficerYi[off].join("　");
   document.getElementById("jiList").innerHTML=OfficerJi[off].join("　");
@@ -3444,6 +3768,16 @@ function renderMonth(){
   var t1d=sTermDay(y,t1n), t2d=sTermDay(y,t2n);
   var n=new Date();
   var isThis=(n.getFullYear()==y && n.getMonth()+1==m);
+  /* 气象季节：万年历视图需要先确保数据就绪 */
+  ensureSeason(y);
+  var sRec=seasonCache[y];
+  var seasonMDs=[];  /* [{md:'MM-DD', key:'spring', label:'入春'}] */
+  if(sRec){
+    var sk=["spring","summer","autumn","winter"];
+    for(var si=0;si<4;si++){
+      if(sRec[sk[si]]) seasonMDs.push({md:sRec[sk[si]], key:sk[si], label:"入"+SEASON_SHORT[sk[si]]});
+    }
+  }
   var tb=document.getElementById("calBody");
   var r, c, dnum=1;
   /* 注意：本环境下给 tbody 赋 innerHTML 会抛"该操作的目标对象无效"，
@@ -3458,13 +3792,22 @@ function renderMonth(){
       var dd=dnum;
       var lunar=toLunar(y,m,dd);
       var adj=holDay(y,m,dd);                 /* 国务院调休安排 */
-      var cls="", sub="";
-      /* 副标题优先级：节气 > 节日 > 调休标记 > 农历 */
+      var cls="", sub="", cellTitle="";
+      var md2=("0"+m).slice(-2)+"-"+("0"+dd).slice(-2);
+      /* 副标题优先级：节气 > 气象季节起始日 > 节日 > 调休标记 > 农历 */
       if(dd==t1d){ sub=termNames[t1n]; cls="term"; }
       else if(dd==t2d){ sub=termNames[t2n]; cls="term"; }
       else{
-        var f=festivals(y,m,dd,lunar,-1);
-        if(f.length){ sub=f[0]; cls="fest"; }
+        var sMatch=null;
+        for(var sm=0;sm<seasonMDs.length;sm++){ if(seasonMDs[sm].md===md2){ sMatch=seasonMDs[sm]; break; } }
+        if(sMatch){
+          sub=sMatch.label; cls="term";
+          cellTitle=sMatch.label+"（气象季节：连续5天滑动平均气温达标，与节气无关）";
+        }
+        else{
+          var f=festivals(y,m,dd,lunar,-1);
+          if(f.length){ sub=f[0]; cls="fest"; }
+        }
       }
       if(adj && adj.type=="work"){
         sub="<span class='ban'>班</span>"+(sub?sub:"");
@@ -3488,6 +3831,7 @@ function renderMonth(){
       }
       td.className=tdCls;
       td.setAttribute("data-d", dd);
+      if(cellTitle) td.title=cellTitle;
       td.innerHTML="<div class='sd"+sdCls+"'>"+dd+"</div><div class='ld "+cls+"'>"+sub+"</div>";
       dnum++;
     }
@@ -5097,6 +5441,12 @@ try{ window.onresize=onWinResize; }catch(e){}
   myLoad();
   schoolLoad();
   holInit(); holLoad();
+  seasonLoad();
+  /* 气象季节：如果缓存里还没有当年的数据，后台异步拉取（首次启动可能需要 2-3 秒） */
+  (function(){
+    var ny=new Date().getFullYear();
+    ensureSeason(ny);
+  })();
   document.getElementById("btnClose").onclick=closeApp;
   document.getElementById("btnSettings").onclick=function(){
     settingsCity="";
