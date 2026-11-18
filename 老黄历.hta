@@ -1828,7 +1828,33 @@ function fetchUvNow(){
      而且像深圳这种入秋后又有回暖的年份，会被误判成"至今未入秋"。
      误判由"月份排除 + 春夏秋冬顺序判定"来兜底。
    ============================================================ */
-var SEASON_EMOJI={spring:"🌸",summer:"☀️",autumn:"🍂",winter:"❄️"};
+/* 季节图标使用内联 SVG，固定形状与配色，不再依赖各平台不同的 Emoji 字体 */
+function seasonIcon(key){
+  var s="";
+  if(key==="spring"){
+    s='<g fill="#ef7fa7">'
+      +'<circle cx="16" cy="7.2" r="5.2"/><circle cx="24.4" cy="13.3" r="5.2"/>'
+      +'<circle cx="21.2" cy="23.5" r="5.2"/><circle cx="10.8" cy="23.5" r="5.2"/>'
+      +'<circle cx="7.6" cy="13.3" r="5.2"/></g><circle cx="16" cy="16" r="4.2" fill="#ffca28"/>';
+  }else if(key==="summer"){
+    s='<g stroke="#ff8f00" stroke-width="2" stroke-linecap="round">'
+      +'<line x1="16" y1="1.6" x2="16" y2="4.6"/><line x1="16" y1="27.4" x2="16" y2="30.4"/>'
+      +'<line x1="1.6" y1="16" x2="4.6" y2="16"/><line x1="27.4" y1="16" x2="30.4" y2="16"/>'
+      +'<line x1="5.5" y1="5.5" x2="7.6" y2="7.6"/><line x1="24.4" y1="24.4" x2="26.5" y2="26.5"/>'
+      +'<line x1="5.5" y1="26.5" x2="7.6" y2="24.4"/><line x1="24.4" y1="7.6" x2="26.5" y2="5.5"/></g>'
+      +'<circle cx="16" cy="16" r="7.5" fill="#ffb300"/>';
+  }else if(key==="autumn"){
+    s='<path d="M25 4C12 5 5 12 7 22c1 5 6 7 10 4 8-4 10-13 8-22z" fill="#b56a2e"/>'
+      +'<path d="M5 29C10 20 15 14 23 8M11 19l-1-6M15 15l6 1" fill="none" stroke="#7b431e" stroke-width="1.6" stroke-linecap="round"/>';
+  }else{
+    s='<g fill="none" stroke="#29b6f6" stroke-width="1.8" stroke-linecap="round">'
+      +'<path d="M16 3v26M4.7 9.5l22.6 13M4.7 22.5l22.6-13"/>'
+      +'<path d="M16 3l-3 4M16 3l3 4M16 29l-3-4M16 29l3-4"/>'
+      +'<path d="M4.7 9.5l5 .3M4.7 9.5l1.8 4.7M27.3 22.5l-5-.3M27.3 22.5l-1.8-4.7"/>'
+      +'<path d="M4.7 22.5l1.8-4.7M4.7 22.5l5-.3M27.3 9.5l-5 .3M27.3 9.5l-1.8 4.7"/></g>';
+  }
+  return '<svg class="wsvg sm" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'+s+'</svg>';
+}
 var SEASON_NAME={spring:"春季",summer:"夏季",autumn:"秋季",winter:"冬季"};
 var SEASON_SHORT={spring:"春",summer:"夏",autumn:"秋",winter:"冬"};
 /* 4 个季节判定的阈值与比较方向（春/夏是"升破"，秋/冬是"跌破"）
@@ -2068,7 +2094,6 @@ function currentSeason(y,m,d){
         key:order[picked],
         name:SEASON_NAME[order[picked]],
         short:SEASON_SHORT[order[picked]],
-        emoji:SEASON_EMOJI[order[picked]],
         since:keys[picked]
       };
       var sinceUTC=Date.UTC(y, parseInt(keys[picked].slice(0,2),10)-1, parseInt(keys[picked].slice(3),10));
@@ -2110,7 +2135,7 @@ function currentSeason(y,m,d){
     var tUTC=Date.UTC(y, m-1, d);
     info={
       key:"winter", name:SEASON_NAME.winter, short:SEASON_SHORT.winter,
-      emoji:SEASON_EMOJI.winter, since:prev.winter,
+      since:prev.winter,
       daysIn:Math.round((tUTC-wUTC)/86400000)+1
     };
     if(rec && rec.spring){
@@ -2670,7 +2695,7 @@ function renderDay(){
        起始日期放进 title，正文只留"气象X季 第N天"，避免过长换行 */
     banner += "<b style='color:#8a4a12;letter-spacing:1px;white-space:nowrap;'"
            +  " title='气象季节（连续5天平均气温达标，与节气无关）："+seasonInfo.since+"入"+seasonInfo.short+"'>"
-           +  seasonInfo.emoji+" 气象"+seasonInfo.name+" 第"+seasonInfo.daysIn+"天</b>";
+           +  seasonIcon(seasonInfo.key)+" 气象"+seasonInfo.name+" 第"+seasonInfo.daysIn+"天</b>";
     if(seasonInfo.daysToNext && seasonInfo.nextName){
       banner += "<span style='color:#a8231a;font-size:15px;font-weight:normal;margin-left:6px;white-space:nowrap;'>"
              +  "距入"+seasonInfo.nextName+" 约"+seasonInfo.daysToNext+"天</span>";
